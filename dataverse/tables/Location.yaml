@@ -1,0 +1,100 @@
+# Location Table Schema
+# Mesa de Ayuda de Mantenimiento - Zamorano University
+
+table:
+  schema_name: cr_location
+  display_name: Location
+  plural_name: Locations
+  description: Physical locations within the university campus
+  ownership: Organization
+  primary_column: full_path
+
+columns:
+  - name: location_id
+    display_name: Location ID
+    type: Autonumber
+    format: "LOC-{SEQNUM:5}"
+    description: Auto-generated unique identifier
+
+  - name: campus
+    display_name: Campus
+    type: SingleLineText
+    max_length: 100
+    required: true
+    description: Campus name (e.g., Campus Principal, Campus Agrícola)
+
+  - name: building
+    display_name: Building
+    type: SingleLineText
+    max_length: 100
+    required: true
+    description: Building name or code
+
+  - name: floor
+    display_name: Floor
+    type: SingleLineText
+    max_length: 50
+    required: false
+    description: Floor number or level identifier
+
+  - name: room
+    display_name: Room
+    type: SingleLineText
+    max_length: 50
+    required: false
+    description: Room number or name
+
+  - name: full_path
+    display_name: Full Path
+    type: SingleLineText
+    max_length: 400
+    description: "Computed: campus/building/floor/room"
+    calculated: true
+    formula: "campus & '/' & building & If(!IsBlank(floor), '/' & floor, '') & If(!IsBlank(room), '/' & room, '')"
+
+  - name: is_active
+    display_name: Is Active
+    type: Boolean
+    default: true
+    description: Whether the location is currently active
+
+views:
+  - name: Active Locations
+    description: All active locations
+    filter: is_active eq true
+    columns: [location_id, campus, building, floor, room, full_path]
+    sort: campus asc, building asc
+
+  - name: Locations by Campus
+    description: Locations grouped by campus
+    filter: is_active eq true
+    columns: [campus, building, floor, room, full_path]
+    group_by: campus
+    sort: building asc
+
+sample_data:
+  - campus: Campus Principal
+    building: Edificio Administrativo
+    floor: "1"
+    room: "101"
+    is_active: true
+  - campus: Campus Principal
+    building: Edificio Académico
+    floor: "2"
+    room: "201"
+    is_active: true
+  - campus: Campus Agrícola
+    building: Laboratorio Central
+    floor: "1"
+    room: Lab-A
+    is_active: true
+  - campus: Campus Principal
+    building: Biblioteca
+    floor: "3"
+    room: Sala de Estudio
+    is_active: true
+  - campus: Campus Principal
+    building: Cafetería
+    floor: null
+    room: null
+    is_active: true

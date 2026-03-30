@@ -1,0 +1,153 @@
+# ══════════════════════════════════════════════════════════════
+# Analytics Dashboard Configuration: Operations Dashboard
+# Target: Power BI or Supervisor App embedded analytics
+# ══════════════════════════════════════════════════════════════
+
+dashboard:
+  name: Operations Dashboard
+  description: >
+    Real-time overview of all maintenance operations. Used by
+    supervisors and management to monitor daily activity.
+  refreshInterval: 60   # seconds (auto-refresh in app)
+  audience:
+    - Supervisor
+    - Administrator
+
+  kpiCards:
+    - id: open_tickets
+      label: Tickets Abiertos
+      icon: 📋
+      query: >
+        cr_tickets?$filter=cr_status lt 5&$count=true
+      valueExpression: "@odata.count"
+      thresholds:
+        warning: 20
+        critical: 40
+
+    - id: in_progress
+      label: En Progreso
+      icon: 🔧
+      query: >
+        cr_tickets?$filter=cr_status eq 3&$count=true
+      valueExpression: "@odata.count"
+
+    - id: on_hold
+      label: En Espera
+      icon: ⏸️
+      query: >
+        cr_tickets?$filter=cr_status eq 4&$count=true
+      valueExpression: "@odata.count"
+      thresholds:
+        warning: 5
+        critical: 10
+
+    - id: closed_today
+      label: Cerrados Hoy
+      icon: ✅
+      query: >
+        cr_tickets?$filter=cr_closed_date ge @{today}&$count=true
+      valueExpression: "@odata.count"
+
+    - id: sla_compliance
+      label: Cumplimiento SLA
+      icon: 📈
+      unit: "%"
+      computation: >
+        (count(cr_slainstances WHERE cr_resolution_met = true AND cr_is_active = false)
+        / count(cr_slainstances WHERE cr_is_active = false)) * 100
+      thresholds:
+        warning: 90    # below 90% triggers yellow
+        critical: 80   # below 80% triggers red
+
+    - id: avg_resolution
+      label: Resolución Prom.
+      icon: ⏱️
+      unit: "h"
+      computation: >
+        avg(cr_tickets.cr_resolution_time_hours WHERE cr_status = 6
+            AND cr_closed_date >= first_day_of_month)
+
+    - id: satisfaction
+      label: Satisfacción
+      icon: ⭐
+      unit: "/5"
+      computation: >
+        avg(cr_surveyresponses.cr_overall_satisfaction
+            WHERE cr_submitted_on >= first_day_of_month)
+      thresholds:
+        warning: 3.5
+        critical: 3.0
+
+    - id: monthly_cost
+      label: Costo Mensual
+      icon: 💰
+      unit: "L"
+      computation: >
+        sum(cr_materialrequests.cr_unit_cost * cr_materialrequests.cr_quantity
+            WHERE cr_status = 3 AND modifiedon >= first_day_of_month)
+        + sum(cr_workorders.cr_actual_cost
+            WHERE modifiedon >= first_day_of_month)
+
+  charts:
+    - id: tickets_by_status
+      type: donut
+      title: Distribución por Estado
+      dataSource: >
+        cr_tickets grouped by cr_status WHERE cr_status lt 7
+      colors:
+        1: "#3B82F6"   # Open - Blue
+        2: "#8B5CF6"   # Assigned - Purple
+        3: "#F59E0B"   # In Progress - Amber
+        4: "#6B7280"   # On Hold - Gray
+        5: "#10B981"   # Resolved - Green
+        6: "#059669"   # Closed - Dark Green
+
+    - id: tickets_by_priority
+      type: horizontalBar
+      title: Distribución por Prioridad
+      dataSource: >
+        cr_tickets grouped by cr_priority WHERE cr_status lt 5
+      colors:
+        1: "#DC2626"   # Critical - Red
+        2: "#F97316"   # High - Orange
+        3: "#EAB308"   # Medium - Yellow
+        4: "#22C55E"   # Low - Green
+
+    - id: tickets_trend
+      type: line
+      title: Tendencia Semanal (últimas 12 semanas)
+      series:
+        - label: Creados
+          color: "#3B82F6"
+          dataSource: >
+            cr_tickets grouped by week(cr_created_on) last 12 weeks
+        - label: Cerrados
+          color: "#10B981"
+          dataSource: >
+            cr_tickets grouped by week(cr_closed_date) last 12 weeks
+
+    - id: technician_workload
+      type: table
+      title: Carga de Trabajo por Técnico
+      columns:
+        - field: fullname
+          label: Técnico
+        - field: assigned_count
+          label: Asignados
+        - field: in_progress_count
+          label: En Progreso
+        - field: avg_resolution_hours
+          label: Resolución Prom.
+        - field: sla_compliance_pct
+          label: "SLA %"
+      dataSource: >
+        systemusers joined with cr_tickets
+        WHERE user.role = 'Technician'
+        GROUP BY user.systemuserid
+
+  powerBiEmbed:
+    workspace: "Zamorano - Mantenimiento"
+    reportName: "Operations Dashboard"
+    embedUrl: "<configure-after-publish>"
+    filterPane: false
+    navPane: false

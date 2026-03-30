@@ -1,0 +1,133 @@
+# ════════════════════════════════════════════════════════════════
+# Power Automate Flow: On Hold Monitor
+# Trigger: Scheduled – Every 6 hours
+# Purpose: Detect tickets stuck in "On Hold" status beyond limits,
+#          alert technicians and supervisors, auto-reopen if needed
+# ════════════════════════════════════════════════════════════════
+
+flow:
+  name: COAP – On Hold Monitor
+  description: >
+    Runs every 6 hours. Checks all tickets in On Hold status.
+    If a ticket has been on hold > 48 hours, alert the technician.
+    If > 72 hours, escalate to supervisor and auto-reopen.
+  trigger:
+    type: scheduled
+    frequency: Hour
+    interval: 6
+    timeZone: Central Standard Time
+
+  settings:
+    concurrency:
+      maximumWaitingRuns: 1   # Skip if previous run still active
+
+  steps:
+    # 1. Get all tickets currently on hold
+    - id: get_on_hold_tickets
+      action: Dataverse – List rows
+      table: cr_tickets
+      filter: "cr_status eq 4"   # On Hold
+      select: >
+        cr_ticketid, cr_ticket_number, cr_title, cr_priority,
+        cr_on_hold_reason, cr_assigned_to, cr_category,
+        modifiedon
+      orderBy: modifiedon asc
+
+    # 2. Apply to each on-hold ticket
+    - id: process_each
+      action: Apply to each
+      items: "@{outputs('get_on_hold_tickets')?['body/value']}"
+      concurrency: 5
+      steps:
+
+        # 2a. Calculate hours on hold
+        - id: calc_hours_on_hold
+          action: Compose
+          inputs:
+            hours: "@{div(sub(ticks(utcNow()), ticks(items('process_each')['modifiedon'])), 36000000000)}"
+
+        # 2b. Get assigned technician
+        - id: get_technician
+          action: Dataverse – Get a row by ID
+          table: systemusers
+          row_id: "@{items('process_each')['cr_assigned_to']}"
+
+        # ──── WARNING: > 48 hours on hold ────
+        - id: check_48h
+          action: Condition
+          expression: "@{and(greater(outputs('calc_hours_on_hold')['hours'], 48), lessOrEquals(outputs('calc_hours_on_hold')['hours'], 72))}"
+          if_true:
+            - id: send_48h_warning
+              action: Send an email (V2)
+              to: "@{outputs('get_technician')?['body/internalemailaddress']}"
+              subject: "⏰ Ticket #@{items('process_each')['cr_ticket_number']} en espera por más de 48 horas"
+              body: >
+                Hola @{outputs('get_technician')?['body/firstname']},
+
+                El ticket #@{items('process_each')['cr_ticket_number']}
+                "@{items('process_each')['cr_title']}"
+                ha estado en estado "En Espera" por
+                @{outputs('calc_hours_on_hold')['hours']} horas.
+
+                Motivo: @{items('process_each')['cr_on_hold_reason']}
+
+                Si el motivo de espera persiste, por favor actualiza el
+                ticket con una nota. De lo contrario, reanuda el trabajo.
+
+                Si no se atiende en las próximas 24 horas, el ticket será
+                reabierto automáticamente y escalado al supervisor.
+
+                Saludos,
+                Sistema COAP
+
+        # ──── ESCALATION: > 72 hours on hold ────
+        - id: check_72h
+          action: Condition
+          expression: "@{greater(outputs('calc_hours_on_hold')['hours'], 72)}"
+          if_true:
+            # Get supervisor via category → department
+            - id: get_category
+              action: Dataverse – Get a row by ID
+              table: cr_categories
+              row_id: "@{items('process_each')['_cr_category_value']}"
+
+            - id: get_department
+              action: Dataverse – Get a row by ID
+              table: cr_departments
+              row_id: "@{outputs('get_category')?['body/_cr_department_value']}"
+
+            # Auto-reopen the ticket
+            - id: reopen_ticket
+              action: Dataverse – Update a row
+              table: cr_tickets
+              row_id: "@{items('process_each')['cr_ticketid']}"
+              body:
+                cr_status: 3   # Back to In Progress
+                cr_internal_notes: >
+                  [SISTEMA] Ticket reabierto automáticamente después de
+                  @{outputs('calc_hours_on_hold')['hours']} horas en espera.
+                  Escalado al supervisor.
+
+            # Notify supervisor
+            - id: send_72h_escalation
+              action: Send an email (V2)
+              to: "@{outputs('get_department')?['body/cr_head_email']}"
+              cc: "@{outputs('get_technician')?['body/internalemailaddress']}"
+              importance: High
+              subject: "⚠️ Ticket #@{items('process_each')['cr_ticket_number']} reabierto automáticamente – @{outputs('calc_hours_on_hold')['hours']}h en espera"
+              body: >
+                ALERTA DE TICKET EN ESPERA PROLONGADA
+
+                El ticket #@{items('process_each')['cr_ticket_number']}
+                "@{items('process_each')['cr_title']}"
+                estuvo en espera por más de 72 horas y ha sido
+                reabierto automáticamente.
+
+                Técnico asignado: @{outputs('get_technician')?['body/fullname']}
+                Motivo de espera: @{items('process_each')['cr_on_hold_reason']}
+                Horas en espera: @{outputs('calc_hours_on_hold')['hours']}
+
+                Por favor, revise y tome las acciones necesarias:
+                reasignación, adquisición de materiales, o cierre del ticket.
+
+                Sistema COAP – Zamorano

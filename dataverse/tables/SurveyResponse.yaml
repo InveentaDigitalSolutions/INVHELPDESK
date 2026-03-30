@@ -1,0 +1,118 @@
+# Survey Response Table Schema
+# Mesa de Ayuda de Mantenimiento - Zamorano University
+
+table:
+  schema_name: cr_survey_response
+  display_name: Survey Response
+  plural_name: Survey Responses
+  description: Post-resolution satisfaction survey responses
+  ownership: Organization
+  primary_column: survey_id
+
+columns:
+  - name: survey_id
+    display_name: Survey ID
+    type: Autonumber
+    format: "SVY-{SEQNUM:6}"
+    description: Auto-generated unique identifier
+
+  - name: ticket_id
+    display_name: Ticket
+    type: Lookup
+    target_table: cr_ticket
+    required: true
+    description: Ticket this survey is for
+
+  - name: respondent
+    display_name: Respondent
+    type: Lookup
+    target_table: systemuser
+    required: true
+    description: User who submitted the survey
+
+  - name: satisfaction_rating
+    display_name: Overall Satisfaction
+    type: Choice
+    required: true
+    options:
+      - value: 1
+        label: "1 - Very Dissatisfied"
+      - value: 2
+        label: "2 - Dissatisfied"
+      - value: 3
+        label: "3 - Neutral"
+      - value: 4
+        label: "4 - Satisfied"
+      - value: 5
+        label: "5 - Very Satisfied"
+
+  - name: resolution_quality
+    display_name: Resolution Quality
+    type: Choice
+    required: true
+    options:
+      - value: 1
+        label: "1 - Very Poor"
+      - value: 2
+        label: "2 - Poor"
+      - value: 3
+        label: "3 - Acceptable"
+      - value: 4
+        label: "4 - Good"
+      - value: 5
+        label: "5 - Excellent"
+
+  - name: technician_professionalism
+    display_name: Technician Professionalism
+    type: Choice
+    required: true
+    options:
+      - value: 1
+        label: "1 - Very Poor"
+      - value: 2
+        label: "2 - Poor"
+      - value: 3
+        label: "3 - Acceptable"
+      - value: 4
+        label: "4 - Good"
+      - value: 5
+        label: "5 - Excellent"
+
+  - name: comments
+    display_name: Comments
+    type: MultiLineText
+    max_length: 5000
+    required: false
+    description: Additional feedback from the user
+
+  - name: submitted_date
+    display_name: Submitted Date
+    type: DateTime
+    behavior: UserLocal
+    auto_populated: true
+
+  # Computed
+  - name: average_rating
+    display_name: Average Rating
+    type: Decimal
+    precision: 2
+    calculated: true
+    formula: "(satisfaction_rating + resolution_quality + technician_professionalism) / 3"
+    description: Average of all three rating dimensions
+
+views:
+  - name: All Survey Responses
+    description: All submitted surveys
+    columns: [survey_id, ticket_id, respondent, satisfaction_rating, resolution_quality, technician_professionalism, submitted_date]
+    sort: submitted_date desc
+
+  - name: Low Satisfaction Responses
+    description: Surveys with below-average ratings
+    filter: satisfaction_rating le 2
+    columns: [survey_id, ticket_id, respondent, satisfaction_rating, comments, submitted_date]
+    sort: submitted_date desc
+
+  - name: Recent Surveys
+    description: Surveys from the last 30 days
+    columns: [survey_id, ticket_id, satisfaction_rating, resolution_quality, technician_professionalism, average_rating]
+    sort: submitted_date desc

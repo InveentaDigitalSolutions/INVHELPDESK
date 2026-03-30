@@ -1,0 +1,193 @@
+# Dataverse Business Rules
+# Mesa de Ayuda de Mantenimiento - Zamorano University
+# These rules are implemented as Dataverse Business Rules (client-side + server-side)
+
+business_rules:
+
+  # ─────────────────────────────────────────────
+  # Rule 1: Auto-set priority based on category and emergency flag
+  # ─────────────────────────────────────────────
+  - name: "Auto-Set Priority on Emergency"
+    table: cr_ticket
+    scope: Entity  # server-side
+    description: |
+      When the emergency flag is toggled on, automatically set priority to Critical.
+      When category has a default SLA, suggest priority based on category configuration.
+    conditions:
+      - field: is_emergency
+        operator: equals
+        value: true
+    actions:
+      - type: SetValue
+        field: priority
+        value: 100000003  # Critical
+      - type: ShowMessage
+        message: "⚠️ Este ticket ha sido marcado como EMERGENCIA. Se aplicará SLA crítico."
+    else_actions:
+      - type: Recommendation
+        field: priority
+        message: "La prioridad se configurará según la categoría seleccionada."
+
+  # ─────────────────────────────────────────────
+  # Rule 2: Validate resolved tickets have completion evidence
+  # ─────────────────────────────────────────────
+  - name: "Require Evidence for Resolution"
+    table: cr_work_order
+    scope: Entity
+    description: |
+      When status is changed to Resolved, validate that after_evidence is not empty.
+      For categories that require evidence, also validate before_evidence.
+    conditions:
+      - field: status
+        operator: equals
+        value: 100000005  # Resolved
+    actions:
+      - type: Validation
+        field: after_evidence
+        rule: "!IsBlank(after_evidence)"
+        error_message: "Se requiere evidencia fotográfica (después) para resolver la orden de trabajo."
+      - type: Validation
+        field: solution_applied
+        rule: "!IsBlank(solution_applied)"
+        error_message: "Se requiere describir la solución aplicada antes de resolver."
+
+  # ─────────────────────────────────────────────
+  # Rule 3: Prevent closure without survey sent
+  # ─────────────────────────────────────────────
+  - name: "Prevent Closure Without Survey"
+    table: cr_ticket
+    scope: Entity
+    description: |
+      Tickets cannot be moved to Closed status unless a survey has been sent
+      or 7+ days have passed since resolution.
+    conditions:
+      - field: status
+        operator: equals
+        value: 100000006  # Closed
+    actions:
+      - type: Validation
+        custom_rule: |
+          // Check if survey exists or 7-day grace period passed
+          LookUp(
+            cr_survey_responses,
+            ticket_id = ThisRecord.ticket_id
+          ) <> Blank() ||
+          DateDiff(ThisRecord.resolved_date, Now(), TimeUnit.Days) >= 7
+        error_message: "No se puede cerrar el ticket sin una encuesta de satisfacción o sin que hayan pasado 7 días desde la resolución."
+
+  # ─────────────────────────────────────────────
+  # Rule 4: Auto-calculate cost variance
+  # ─────────────────────────────────────────────
+  - name: "Calculate Cost Variance"
+    table: cr_work_order
+    scope: Entity
+    description: |
+      Automatically calculate the variance between estimated and actual costs.
+      Flag when variance exceeds 20%.
+    calculated_fields:
+      - field: cost_variance
+        formula: |
+          (Value(actual_material_cost) + Value(actual_external_cost) + Value(actual_labor_hours) * 150) -
+          (Value(estimated_material_cost) + Value(estimated_external_cost) + Value(estimated_labor_hours) * 150)
+    conditions:
+      - field: cost_variance
+        operator: greater_than
+        value: 0
+        percentage_check: |
+          Abs(cost_variance) / If(total_estimated_cost > 0, total_estimated_cost, 1) > 0.2
+    actions:
+      - type: ShowMessage
+        message: "⚠️ La variación de costos supera el 20%. Puede requerir aprobación del supervisor."
+        severity: Warning
+
+  # ─────────────────────────────────────────────
+  # Rule 5: Validate On Hold requires reason and ETA
+  # ─────────────────────────────────────────────
+  - name: "Validate On Hold Status"
+    table: cr_ticket
+    scope: Entity
+    description: |
+      When ticket status is changed to On Hold, require a reason and ETA.
+    conditions:
+      - field: status
+        operator: equals
+        value: 100000003  # On Hold
+    actions:
+      - type: SetRequired
+        field: on_hold_reason
+        required: true
+      - type: SetRequired
+        field: on_hold_eta
+        required: true
+      - type: Validation
+        field: on_hold_reason
+        rule: "!IsBlank(on_hold_reason)"
+        error_message: "Se requiere una razón para poner el ticket en espera."
+      - type: Validation
+        field: on_hold_eta
+        rule: "!IsBlank(on_hold_eta) && on_hold_eta > Now()"
+        error_message: "Se requiere una fecha estimada de retorno (ETA) futura."
+
+  # ─────────────────────────────────────────────
+  # Rule 6: Status Workflow Validation
+  # ─────────────────────────────────────────────
+  - name: "Enforce Status Workflow"
+    table: cr_ticket
+    scope: Entity
+    description: |
+      Enforce valid status transitions:
+      New → Assigned → In Diagnosis → (On Hold | In Progress) → Resolved → Closed
+    valid_transitions:
+      New: [Assigned]
+      Assigned: [In Diagnosis, In Progress]
+      "In Diagnosis": [On Hold, In Progress, Assigned]
+      "On Hold": [In Diagnosis, In Progress]
+      "In Progress": [On Hold, Resolved]
+      Resolved: [In Progress, Closed]
+      Closed: []  # Terminal state
+
+  # ─────────────────────────────────────────────
+  # Rule 7: Root Cause Required for Critical
+  # ─────────────────────────────────────────────
+  - name: "Require Root Cause for Critical Tickets"
+    table: cr_work_order
+    scope: Entity
+    description: |
+      For work orders linked to critical-priority tickets, root_cause is mandatory
+      before the work order can be resolved.
+    conditions:
+      - field: status
+        operator: equals
+        value: 100000005  # Resolved
+      - field: "ticket_id.priority"
+        operator: equals
+        value: 100000003  # Critical
+    actions:
+      - type: SetRequired
+        field: root_cause
+        required: true
+      - type: Validation
+        field: root_cause
+        rule: "!IsBlank(root_cause)"
+        error_message: "Se requiere análisis de causa raíz para tickets críticos."
+
+  # ─────────────────────────────────────────────
+  # Rule 8: Auto-set first response date
+  # ─────────────────────────────────────────────
+  - name: "Track First Response"
+    table: cr_ticket
+    scope: Entity
+    description: |
+      When ticket status changes from New to any other status for the first time,
+      record the first_response_date.
+    conditions:
+      - field: status
+        operator: not_equals
+        value: 100000000  # Not New
+      - field: first_response_date
+        operator: equals
+        value: null
+    actions:
+      - type: SetValue
+        field: first_response_date
+        value: "Now()"

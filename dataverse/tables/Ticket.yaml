@@ -1,0 +1,247 @@
+# Ticket Table Schema
+# Mesa de Ayuda de Mantenimiento - Zamorano University
+
+table:
+  schema_name: cr_ticket
+  display_name: Ticket
+  plural_name: Tickets
+  description: Main service request / help desk ticket entity
+  ownership: Organization
+  primary_column: title
+
+columns:
+  - name: ticket_id
+    display_name: Ticket ID
+    type: Autonumber
+    format: "TKT-{SEQNUM:6}"
+    description: Auto-generated unique ticket number
+
+  - name: title
+    display_name: Title
+    type: SingleLineText
+    max_length: 200
+    required: true
+    description: Brief description of the issue
+
+  - name: description
+    display_name: Description
+    type: MultiLineText
+    max_length: 10000
+    required: true
+    description: Detailed description of the issue or request
+
+  - name: requesting_department
+    display_name: Requesting Department
+    type: Lookup
+    target_table: cr_department
+    required: true
+    description: Department making the request
+
+  - name: requesting_user
+    display_name: Requesting User
+    type: Lookup
+    target_table: systemuser
+    required: true
+    description: User who created the ticket
+
+  - name: location_id
+    display_name: Location
+    type: Lookup
+    target_table: cr_location
+    required: true
+    description: Physical location of the issue
+
+  - name: category_id
+    display_name: Category
+    type: Lookup
+    target_table: cr_category
+    required: true
+    description: Service category
+
+  - name: subcategory_id
+    display_name: Subcategory
+    type: Lookup
+    target_table: cr_subcategory
+    required: false
+    description: Service subcategory (filtered by category)
+
+  - name: priority
+    display_name: Priority
+    type: Choice
+    required: true
+    options:
+      - value: 100000000
+        label: Low
+        color: "#4CAF50"
+      - value: 100000001
+        label: Medium
+        color: "#FF9800"
+      - value: 100000002
+        label: High
+        color: "#F44336"
+      - value: 100000003
+        label: Critical
+        color: "#9C27B0"
+    default: 100000001
+    description: Ticket priority level
+
+  - name: status
+    display_name: Status
+    type: Choice
+    required: true
+    options:
+      - value: 100000000
+        label: New
+        color: "#2196F3"
+      - value: 100000001
+        label: Assigned
+        color: "#03A9F4"
+      - value: 100000002
+        label: In Diagnosis
+        color: "#00BCD4"
+      - value: 100000003
+        label: On Hold
+        color: "#FF9800"
+      - value: 100000004
+        label: In Progress
+        color: "#8BC34A"
+      - value: 100000005
+        label: Resolved
+        color: "#4CAF50"
+      - value: 100000006
+        label: Closed
+        color: "#9E9E9E"
+    default: 100000000
+    description: Current ticket lifecycle status
+
+  - name: is_emergency
+    display_name: Is Emergency
+    type: Boolean
+    default: false
+    description: Flag for emergency tickets requiring immediate attention
+
+  - name: assigned_to
+    display_name: Assigned To
+    type: Lookup
+    target_table: systemuser
+    required: false
+    description: Technician assigned to this ticket
+
+  - name: assigned_team
+    display_name: Assigned Team
+    type: Lookup
+    target_table: team
+    required: false
+    description: Team assigned to this ticket
+
+  - name: created_date
+    display_name: Created Date
+    type: DateTime
+    behavior: UserLocal
+    auto_populated: true
+    description: Date and time the ticket was created
+
+  - name: first_response_date
+    display_name: First Response Date
+    type: DateTime
+    behavior: UserLocal
+    required: false
+    description: Date and time of the first response to the ticket
+
+  - name: resolved_date
+    display_name: Resolved Date
+    type: DateTime
+    behavior: UserLocal
+    required: false
+    description: Date and time the ticket was resolved
+
+  - name: closed_date
+    display_name: Closed Date
+    type: DateTime
+    behavior: UserLocal
+    required: false
+    description: Date and time the ticket was closed
+
+  - name: sla_instance_id
+    display_name: SLA Instance
+    type: Lookup
+    target_table: cr_sla_instance
+    required: false
+    description: Associated SLA tracking instance
+
+  - name: related_asset_id
+    display_name: Related Asset
+    type: Lookup
+    target_table: cr_asset
+    required: false
+    description: Asset related to this ticket (optional)
+
+  - name: on_hold_reason
+    display_name: On Hold Reason
+    type: MultiLineText
+    max_length: 2000
+    required: false
+    description: Reason for placing ticket on hold
+
+  - name: on_hold_eta
+    display_name: On Hold ETA
+    type: DateTime
+    behavior: UserLocal
+    required: false
+    description: Expected time to resume from hold status
+
+relationships:
+  - name: ticket_work_orders
+    type: OneToMany
+    related_table: cr_work_order
+    related_column: ticket_id
+    cascade_delete: Restrict
+
+  - name: ticket_material_requests
+    type: OneToMany
+    related_table: cr_material_request
+    related_column: ticket_id
+    cascade_delete: Restrict
+
+  - name: ticket_survey_responses
+    type: OneToMany
+    related_table: cr_survey_response
+    related_column: ticket_id
+    cascade_delete: Restrict
+
+views:
+  - name: All Open Tickets
+    description: All tickets that are not closed
+    filter: status ne 100000006
+    columns: [ticket_id, title, priority, status, requesting_department, assigned_to, created_date]
+    sort: created_date desc
+
+  - name: My Open Tickets
+    description: Open tickets for the current user
+    filter: requesting_user eq currentuser AND status ne 100000006
+    columns: [ticket_id, title, priority, status, category_id, created_date]
+    sort: created_date desc
+
+  - name: Unassigned Tickets
+    description: Tickets without an assigned technician
+    filter: assigned_to eq null AND status eq 100000000
+    columns: [ticket_id, title, priority, category_id, location_id, created_date]
+    sort: priority desc, created_date asc
+
+  - name: Emergency Tickets
+    description: All emergency tickets
+    filter: is_emergency eq true AND status ne 100000006
+    columns: [ticket_id, title, priority, status, location_id, assigned_to, created_date]
+    sort: created_date desc
+
+  - name: SLA At Risk
+    description: Tickets approaching SLA breach
+    filter: status ne 100000005 AND status ne 100000006
+    columns: [ticket_id, title, priority, status, assigned_to, sla_instance_id, created_date]
+    sort: priority desc
+
+  - name: Overdue Tickets
+    description: Tickets that have breached SLA
+    filter: status ne 100000005 AND status ne 100000006
+    columns: [ticket_id, title, priority, status, assigned_to, created_date]
+    sort: created_date asc

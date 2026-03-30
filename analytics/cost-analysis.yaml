@@ -1,0 +1,211 @@
+# ══════════════════════════════════════════════════════════════
+# Analytics Dashboard Configuration: Cost Analysis
+# Target: Power BI or Supervisor App embedded analytics
+# ══════════════════════════════════════════════════════════════
+
+dashboard:
+  name: Cost Analysis Dashboard
+  description: >
+    Comprehensive view of maintenance costs including materials,
+    labor (time logs), and work order expenses. Supports
+    budgeting and cost optimization decisions.
+  refreshInterval: 600   # 10 min - financial data
+  audience:
+    - Supervisor
+    - Administrator
+
+  kpiCards:
+    - id: total_mtd_cost
+      label: Costo Total (Mes)
+      icon: 💰
+      unit: "L"
+      computation: >
+        sum(materials_cost + labor_cost + workorder_cost)
+        WHERE period = current_month
+      subComponents:
+        materials: sum(cr_materialrequests.cr_unit_cost * cr_quantity WHERE cr_status = 3)
+        labor: sum(cr_timelogs.cr_duration_hours * technician_hourly_rate)
+        workOrders: sum(cr_workorders.cr_actual_cost)
+
+    - id: avg_cost_per_ticket
+      label: Costo Prom. / Ticket
+      icon: 🧾
+      unit: "L"
+      computation: >
+        total_mtd_cost / count(cr_tickets WHERE cr_closed_date IN current_month)
+      thresholds:
+        warning: 500
+        critical: 1000
+
+    - id: materials_pending_approval
+      label: Materiales Pendientes
+      icon: ⏳
+      unit: "L"
+      computation: >
+        sum(cr_materialrequests.cr_unit_cost * cr_quantity
+            WHERE cr_status IN (1, 2))   # Requested, Pending Approval
+
+    - id: cost_variance_alerts
+      label: Alertas de Desvío
+      icon: ⚠️
+      computation: >
+        count(cr_workorders WHERE
+          abs(cr_actual_cost - cr_estimated_cost) / cr_estimated_cost > 0.15
+          AND modifiedon >= first_day_of_month)
+      thresholds:
+        warning: 3
+        critical: 5
+
+    - id: budget_utilization
+      label: Uso de Presupuesto
+      icon: 📊
+      unit: "%"
+      computation: >
+        (total_mtd_cost / monthly_budget) * 100
+      monthlyBudget: 50000   # L 50,000 - configurable
+      thresholds:
+        warning: 80
+        critical: 95
+
+  charts:
+    - id: cost_trend_monthly
+      type: stackedBar
+      title: Tendencia de Costos por Mes (últimos 12 meses)
+      xAxis: month
+      series:
+        - label: Materiales
+          color: "#3B82F6"
+          computation: >
+            monthly sum(cr_materialrequests.cr_unit_cost * cr_quantity
+                WHERE cr_status = 3)
+        - label: Mano de Obra
+          color: "#F59E0B"
+          computation: >
+            monthly sum(cr_timelogs.cr_duration_hours * hourly_rate)
+        - label: Órdenes de Trabajo
+          color: "#8B5CF6"
+          computation: >
+            monthly sum(cr_workorders.cr_actual_cost)
+
+    - id: cost_by_category
+      type: horizontalBar
+      title: Costos por Categoría de Mantenimiento
+      dataSource: >
+        cr_tickets joined cr_categories
+        total cost per category (materials + labor + work orders)
+        ORDER BY total_cost DESC
+      colorScale: gradient #00643E to #A7F3D0
+      showValues: true
+
+    - id: cost_by_department
+      type: pie
+      title: Distribución de Costos por Departamento
+      dataSource: >
+        cr_tickets joined cr_categories joined cr_departments
+        total cost per department
+      showPercentages: true
+      showLegend: true
+
+    - id: estimated_vs_actual
+      type: scatterPlot
+      title: Costo Estimado vs Real (Órdenes de Trabajo)
+      xAxis:
+        label: Estimado (L)
+        field: cr_workorders.cr_estimated_cost
+      yAxis:
+        label: Real (L)
+        field: cr_workorders.cr_actual_cost
+      referenceLine:
+        type: diagonal   # 45° line = perfect estimation
+        color: "#6B7280"
+        label: "Estimación perfecta"
+      colorBy: variance_percentage
+      tooltipFields:
+        - cr_tickets.cr_ticket_number
+        - cr_categories.cr_name
+        - variance_percentage
+
+    - id: top_expensive_tickets
+      type: table
+      title: Top 10 Tickets Más Costosos (Este Mes)
+      columns:
+        - field: ticket_number
+          label: "Ticket #"
+        - field: title
+          label: Título
+        - field: category
+          label: Categoría
+        - field: materials_cost
+          label: Materiales (L)
+          format: currency
+        - field: labor_cost
+          label: "M. Obra (L)"
+          format: currency
+        - field: workorder_cost
+          label: "O. Trabajo (L)"
+          format: currency
+        - field: total_cost
+          label: Total (L)
+          format: currency
+          highlight: true
+      dataSource: >
+        cr_tickets with aggregated costs
+        WHERE cr_closed_date IN current_month
+        ORDER BY total_cost DESC
+        TOP 10
+
+    - id: material_usage
+      type: table
+      title: Materiales Más Utilizados (Este Mes)
+      columns:
+        - field: material_name
+          label: Material
+        - field: total_quantity
+          label: Cantidad
+        - field: total_cost
+          label: Costo Total (L)
+          format: currency
+        - field: num_tickets
+          label: "# Tickets"
+      dataSource: >
+        cr_materialrequests
+        GROUP BY cr_material_name
+        WHERE cr_status = 3 AND modifiedon IN current_month
+        ORDER BY total_cost DESC
+        TOP 15
+
+    - id: variance_analysis
+      type: table
+      title: Análisis de Desvíos (> 15%)
+      description: >
+        Work orders where actual cost deviated more than 15%
+        from estimated cost. Helps identify estimation gaps.
+      columns:
+        - field: ticket_number
+          label: "Ticket #"
+        - field: category
+          label: Categoría
+        - field: estimated
+          label: Estimado (L)
+          format: currency
+        - field: actual
+          label: Real (L)
+          format: currency
+        - field: variance_pct
+          label: Desvío (%)
+          format: percentage
+          conditionalFormat:
+            green: "< 15"
+            yellow: "15 - 30"
+            red: "> 30"
+        - field: technician
+          label: Técnico
+      dataSource: >
+        cr_workorders joined cr_tickets
+        WHERE abs(cr_actual_cost - cr_estimated_cost) / cr_estimated_cost > 0.15
+        ORDER BY variance_pct DESC
+
+  powerBiEmbed:
+    workspace: "Zamorano - Mantenimiento"
+    reportName: "Cost Analysis"
+    embedUrl: "<configure-after-publish>"

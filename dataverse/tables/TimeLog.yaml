@@ -1,0 +1,86 @@
+# Time Log Table Schema
+# Mesa de Ayuda de Mantenimiento - Zamorano University
+
+table:
+  schema_name: cr_time_log
+  display_name: Time Log
+  plural_name: Time Logs
+  description: Time tracking entries for technician work sessions
+  ownership: Organization
+  primary_column: timelog_id
+
+columns:
+  - name: timelog_id
+    display_name: Time Log ID
+    type: Autonumber
+    format: "TL-{SEQNUM:6}"
+    description: Auto-generated unique identifier
+
+  - name: workorder_id
+    display_name: Work Order
+    type: Lookup
+    target_table: cr_work_order
+    required: true
+    description: Work order this time entry belongs to
+
+  - name: technician
+    display_name: Technician
+    type: Lookup
+    target_table: systemuser
+    required: true
+    description: Technician who performed the work
+
+  - name: start_time
+    display_name: Start Time
+    type: DateTime
+    behavior: UserLocal
+    required: true
+    description: When the work session started
+
+  - name: end_time
+    display_name: End Time
+    type: DateTime
+    behavior: UserLocal
+    required: false
+    description: When the work session ended (null if timer is running)
+
+  - name: duration_hours
+    display_name: Duration (Hours)
+    type: Decimal
+    precision: 2
+    min_value: 0
+    calculated: true
+    formula: "DateDiff(start_time, end_time, TimeUnit.Hours)"
+    description: Computed duration in hours
+
+  - name: activity_description
+    display_name: Activity Description
+    type: MultiLineText
+    max_length: 2000
+    required: true
+    description: Description of work performed during this time
+
+  - name: is_active
+    display_name: Timer Active
+    type: Boolean
+    default: false
+    description: Whether the timer is currently running
+
+views:
+  - name: Active Timers
+    description: Currently running time sessions
+    filter: is_active eq true
+    columns: [timelog_id, workorder_id, technician, start_time, activity_description]
+    sort: start_time desc
+
+  - name: My Time Logs
+    description: Time logs for the current user
+    filter: technician eq currentuser
+    columns: [timelog_id, workorder_id, start_time, end_time, duration_hours, activity_description]
+    sort: start_time desc
+
+  - name: All Time Logs
+    description: All completed time entries
+    filter: is_active eq false
+    columns: [timelog_id, workorder_id, technician, start_time, end_time, duration_hours]
+    sort: start_time desc

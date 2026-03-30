@@ -1,0 +1,122 @@
+# Material Request Table Schema
+# Mesa de Ayuda de Mantenimiento - Zamorano University
+
+table:
+  schema_name: cr_material_request
+  display_name: Material Request
+  plural_name: Material Requests
+  description: Material and supply requests linked to work orders
+  ownership: Organization
+  primary_column: material_request_id
+
+columns:
+  - name: material_request_id
+    display_name: Material Request ID
+    type: Autonumber
+    format: "MR-{SEQNUM:5}"
+    description: Auto-generated unique identifier
+
+  - name: ticket_id
+    display_name: Ticket
+    type: Lookup
+    target_table: cr_ticket
+    required: true
+    description: Related ticket
+
+  - name: workorder_id
+    display_name: Work Order
+    type: Lookup
+    target_table: cr_work_order
+    required: false
+    description: Related work order
+
+  - name: requested_by
+    display_name: Requested By
+    type: Lookup
+    target_table: systemuser
+    required: true
+    description: Technician requesting the material
+
+  - name: status
+    display_name: Status
+    type: Choice
+    required: true
+    options:
+      - value: 100000000
+        label: Required
+        color: "#2196F3"
+      - value: 100000001
+        label: Pending Approval
+        color: "#FF9800"
+      - value: 100000002
+        label: Approved
+        color: "#4CAF50"
+      - value: 100000003
+        label: Rejected
+        color: "#F44336"
+      - value: 100000004
+        label: Delivered
+        color: "#8BC34A"
+      - value: 100000005
+        label: Consumed
+        color: "#9E9E9E"
+    default: 100000000
+
+  - name: material_description
+    display_name: Material Description
+    type: MultiLineText
+    max_length: 5000
+    required: true
+    description: Detailed description of materials needed
+
+  - name: estimated_cost
+    display_name: Estimated Cost
+    type: Currency
+    precision: 2
+    min_value: 0
+    required: true
+
+  - name: justification
+    display_name: Justification
+    type: MultiLineText
+    max_length: 2000
+    required: true
+    description: Business justification for the material request
+
+  - name: approved_by
+    display_name: Approved By
+    type: Lookup
+    target_table: systemuser
+    required: false
+    description: Supervisor who approved/rejected the request
+
+  - name: approval_date
+    display_name: Approval Date
+    type: DateTime
+    behavior: UserLocal
+    required: false
+
+  - name: delivered_date
+    display_name: Delivered Date
+    type: DateTime
+    behavior: UserLocal
+    required: false
+
+  - name: rejection_reason
+    display_name: Rejection Reason
+    type: MultiLineText
+    max_length: 2000
+    required: false
+    description: Reason for rejection (required when rejected)
+
+views:
+  - name: Pending Approvals
+    description: Material requests awaiting approval
+    filter: status eq 100000001
+    columns: [material_request_id, ticket_id, requested_by, material_description, estimated_cost, justification]
+    sort: estimated_cost desc
+
+  - name: All Material Requests
+    description: All material requests
+    columns: [material_request_id, ticket_id, status, material_description, estimated_cost, approved_by]
+    sort: material_request_id desc

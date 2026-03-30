@@ -1,0 +1,117 @@
+# Category Table Schema
+# Mesa de Ayuda de Mantenimiento - Zamorano University
+
+table:
+  schema_name: cr_category
+  display_name: Category
+  plural_name: Categories
+  description: Service categories for ticket classification
+  ownership: Organization
+  primary_column: name
+
+columns:
+  - name: category_id
+    display_name: Category ID
+    type: Autonumber
+    format: "CAT-{SEQNUM:4}"
+    description: Auto-generated unique identifier
+
+  - name: name
+    display_name: Category Name
+    type: SingleLineText
+    max_length: 100
+    required: true
+    description: "Category name (e.g., Eléctrico, Plomería, Carpintería)"
+
+  - name: department
+    display_name: Department
+    type: Lookup
+    target_table: cr_department
+    required: true
+    description: Department this category belongs to
+
+  - name: default_sla_policy
+    display_name: Default SLA Policy
+    type: Lookup
+    target_table: cr_sla_policy
+    required: false
+    description: Default SLA policy applied to tickets in this category
+
+  - name: requires_evidence
+    display_name: Requires Evidence
+    type: Boolean
+    default: false
+    description: Whether tickets in this category require photo/video evidence
+
+  - name: is_active
+    display_name: Is Active
+    type: Boolean
+    default: true
+    description: Whether the category is currently active
+
+relationships:
+  - name: category_subcategories
+    type: OneToMany
+    related_table: cr_subcategory
+    related_column: category_id
+    cascade_delete: Restrict
+
+  - name: category_tickets
+    type: OneToMany
+    related_table: cr_ticket
+    related_column: category_id
+    cascade_delete: Restrict
+
+  - name: category_knowledge_articles
+    type: OneToMany
+    related_table: cr_knowledge_article
+    related_column: category_id
+    cascade_delete: Restrict
+
+views:
+  - name: Active Categories
+    description: All active categories
+    filter: is_active eq true
+    columns: [category_id, name, department, requires_evidence]
+    sort: name asc
+
+  - name: Categories by Department
+    description: Active categories grouped by department
+    filter: is_active eq true
+    columns: [name, department, default_sla_policy, requires_evidence]
+    group_by: department
+    sort: name asc
+
+sample_data:
+  - name: Eléctrico
+    department: Mantenimiento
+    requires_evidence: true
+    is_active: true
+  - name: Plomería
+    department: Mantenimiento
+    requires_evidence: true
+    is_active: true
+  - name: Carpintería
+    department: Mantenimiento
+    requires_evidence: false
+    is_active: true
+  - name: Pintura
+    department: Mantenimiento
+    requires_evidence: true
+    is_active: true
+  - name: Aire Acondicionado / HVAC
+    department: Mantenimiento
+    requires_evidence: false
+    is_active: true
+  - name: Cerrajería
+    department: Mantenimiento
+    requires_evidence: false
+    is_active: true
+  - name: Jardinería
+    department: Mantenimiento
+    requires_evidence: false
+    is_active: true
+  - name: Limpieza General
+    department: Servicios Generales
+    requires_evidence: false
+    is_active: true

@@ -1,0 +1,121 @@
+# SLA Instance Table Schema
+# Mesa de Ayuda de Mantenimiento - Zamorano University
+
+table:
+  schema_name: cr_sla_instance
+  display_name: SLA Instance
+  plural_name: SLA Instances
+  description: Tracks SLA compliance for individual tickets
+  ownership: Organization
+  primary_column: sla_instance_id
+
+columns:
+  - name: sla_instance_id
+    display_name: SLA Instance ID
+    type: Autonumber
+    format: "SLAI-{SEQNUM:6}"
+    description: Auto-generated unique identifier
+
+  - name: ticket_id
+    display_name: Ticket
+    type: Lookup
+    target_table: cr_ticket
+    required: true
+    description: Ticket being tracked
+
+  - name: sla_policy_id
+    display_name: SLA Policy
+    type: Lookup
+    target_table: cr_sla_policy
+    required: true
+    description: Applied SLA policy
+
+  - name: first_response_deadline
+    display_name: First Response Deadline
+    type: DateTime
+    behavior: UserLocal
+    required: true
+    description: "Computed: ticket.created_date + policy.first_response_minutes"
+
+  - name: diagnosis_deadline
+    display_name: Diagnosis Deadline
+    type: DateTime
+    behavior: UserLocal
+    required: true
+    description: "Computed: ticket.created_date + policy.diagnosis_time_hours"
+
+  - name: resolution_deadline
+    display_name: Resolution Deadline
+    type: DateTime
+    behavior: UserLocal
+    required: true
+    description: "Computed: ticket.created_date + policy.resolution_time_hours"
+
+  - name: first_response_met
+    display_name: First Response Met
+    type: Boolean
+    default: false
+    description: Whether first response SLA was met
+
+  - name: diagnosis_met
+    display_name: Diagnosis Met
+    type: Boolean
+    default: false
+    description: Whether diagnosis SLA was met
+
+  - name: resolution_met
+    display_name: Resolution Met
+    type: Boolean
+    default: false
+    description: Whether resolution SLA was met
+
+  - name: overall_sla_met
+    display_name: Overall SLA Met
+    type: Boolean
+    default: false
+    calculated: true
+    formula: "first_response_met AND diagnosis_met AND resolution_met"
+    description: Whether all SLA milestones were met
+
+  - name: breach_reason
+    display_name: Breach Reason
+    type: MultiLineText
+    max_length: 2000
+    required: false
+    description: Explanation if SLA was breached
+
+  - name: is_paused
+    display_name: Is Paused
+    type: Boolean
+    default: false
+    description: Whether SLA timer is paused (e.g., ticket on hold)
+
+  - name: paused_at
+    display_name: Paused At
+    type: DateTime
+    behavior: UserLocal
+    required: false
+    description: When the SLA timer was paused
+
+  - name: total_paused_minutes
+    display_name: Total Paused Minutes
+    type: WholeNumber
+    default: 0
+    description: Total minutes the SLA timer has been paused
+
+views:
+  - name: Active SLA Instances
+    description: SLA instances for open tickets
+    columns: [sla_instance_id, ticket_id, sla_policy_id, first_response_deadline, resolution_deadline, overall_sla_met]
+    sort: resolution_deadline asc
+
+  - name: SLA Breaches
+    description: SLA instances where one or more milestones were breached
+    filter: overall_sla_met eq false
+    columns: [sla_instance_id, ticket_id, first_response_met, diagnosis_met, resolution_met, breach_reason]
+    sort: resolution_deadline asc
+
+  - name: At Risk SLAs
+    description: SLA instances approaching deadlines
+    columns: [sla_instance_id, ticket_id, sla_policy_id, first_response_deadline, diagnosis_deadline, resolution_deadline]
+    sort: resolution_deadline asc

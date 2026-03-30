@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/pages/analyticsscreen.tsx","./src/pages/approvalcenter.tsx","./src/pages/configurationscreen.tsx","./src/pages/operationsdashboard.tsx","./src/pages/queuemanagement.tsx","./src/pages/ticketdetailscreen.tsx","./src/utils/skillsdata.ts"],"version":"5.7.3"}

@@ -1,0 +1,96 @@
+# Knowledge Article Table Schema
+# Mesa de Ayuda de Mantenimiento - Zamorano University
+
+table:
+  schema_name: cr_knowledge_article
+  display_name: Knowledge Article
+  plural_name: Knowledge Articles
+  description: Knowledge base articles for self-service and technician reference
+  ownership: Organization
+  primary_column: title
+
+columns:
+  - name: article_id
+    display_name: Article ID
+    type: Autonumber
+    format: "KB-{SEQNUM:5}"
+    description: Auto-generated unique identifier
+
+  - name: title
+    display_name: Title
+    type: SingleLineText
+    max_length: 200
+    required: true
+    description: Article title
+
+  - name: category_id
+    display_name: Category
+    type: Lookup
+    target_table: cr_category
+    required: true
+    description: Service category this article relates to
+
+  - name: content
+    display_name: Content
+    type: MultiLineText
+    max_length: 50000
+    required: true
+    format: RichText
+    description: Full article content with rich text formatting
+
+  - name: keywords
+    display_name: Keywords
+    type: MultiLineText
+    max_length: 1000
+    required: false
+    description: Comma-separated keywords for search
+
+  - name: view_count
+    display_name: View Count
+    type: WholeNumber
+    default: 0
+    description: Number of times this article has been viewed
+
+  - name: is_published
+    display_name: Is Published
+    type: Boolean
+    default: false
+    description: Whether the article is visible to users
+
+  - name: created_by_user
+    display_name: Created By
+    type: Lookup
+    target_table: systemuser
+    required: true
+
+  - name: created_date
+    display_name: Created Date
+    type: DateTime
+    behavior: UserLocal
+    auto_populated: true
+
+  - name: last_updated_date
+    display_name: Last Updated
+    type: DateTime
+    behavior: UserLocal
+    auto_populated: true
+
+views:
+  - name: Published Articles
+    description: All published knowledge base articles
+    filter: is_published eq true
+    columns: [article_id, title, category_id, keywords, view_count]
+    sort: view_count desc
+
+  - name: Most Popular Articles
+    description: Top articles by view count
+    filter: is_published eq true
+    columns: [title, category_id, view_count]
+    sort: view_count desc
+
+  - name: Articles by Category
+    description: Published articles grouped by category
+    filter: is_published eq true
+    columns: [title, category_id, keywords, view_count]
+    group_by: category_id
+    sort: title asc

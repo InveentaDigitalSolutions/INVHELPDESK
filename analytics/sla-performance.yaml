@@ -1,0 +1,190 @@
+# ══════════════════════════════════════════════════════════════
+# Analytics Dashboard Configuration: SLA Performance
+# Target: Power BI or Supervisor App embedded analytics
+# ══════════════════════════════════════════════════════════════
+
+dashboard:
+  name: SLA Performance Dashboard
+  description: >
+    Tracks SLA compliance across first response, diagnosis, and
+    resolution timelines. Identifies patterns and bottlenecks.
+  refreshInterval: 300   # 5 min - less volatile data
+  audience:
+    - Supervisor
+    - Administrator
+
+  kpiCards:
+    - id: overall_sla_compliance
+      label: Cumplimiento General SLA
+      unit: "%"
+      computation: >
+        (count(cr_slainstances WHERE cr_resolution_met = true AND cr_is_active = false)
+        / count(cr_slainstances WHERE cr_is_active = false)) * 100
+      period: current_month
+      thresholds:
+        target: 95
+        warning: 90
+        critical: 80
+
+    - id: first_response_compliance
+      label: Primera Respuesta SLA
+      unit: "%"
+      computation: >
+        (count(cr_slainstances WHERE cr_first_response_met = true AND cr_is_active = false)
+        / count(cr_slainstances WHERE cr_is_active = false)) * 100
+      period: current_month
+
+    - id: diagnosis_compliance
+      label: Diagnóstico SLA
+      unit: "%"
+      computation: >
+        (count(cr_slainstances WHERE cr_diagnosis_met = true AND cr_is_active = false)
+        / count(cr_slainstances WHERE cr_is_active = false)) * 100
+      period: current_month
+
+    - id: resolution_compliance
+      label: Resolución SLA
+      unit: "%"
+      computation: >
+        (count(cr_slainstances WHERE cr_resolution_met = true AND cr_is_active = false)
+        / count(cr_slainstances WHERE cr_is_active = false)) * 100
+      period: current_month
+
+    - id: active_breaches
+      label: Brechas Activas
+      computation: >
+        count(cr_slainstances WHERE cr_is_active = true
+          AND (cr_first_response_deadline < NOW()
+            OR cr_diagnosis_deadline < NOW()
+            OR cr_resolution_deadline < NOW()))
+      thresholds:
+        warning: 3
+        critical: 5
+
+    - id: avg_time_to_first_response
+      label: Prom. Primera Respuesta
+      unit: "h"
+      computation: >
+        avg(datediff(hour, cr_tickets.cr_created_on,
+            cr_slainstances.cr_first_response_actual)
+            WHERE cr_slainstances.cr_is_active = false)
+
+  charts:
+    - id: sla_trend_monthly
+      type: line
+      title: Tendencia SLA Mensual (últimos 6 meses)
+      series:
+        - label: Primera Respuesta
+          color: "#3B82F6"
+          computation: >
+            monthly percentage of cr_first_response_met = true
+        - label: Diagnóstico
+          color: "#F59E0B"
+          computation: >
+            monthly percentage of cr_diagnosis_met = true
+        - label: Resolución
+          color: "#10B981"
+          computation: >
+            monthly percentage of cr_resolution_met = true
+
+    - id: sla_by_priority
+      type: groupedBar
+      title: Cumplimiento SLA por Prioridad
+      groupBy: cr_tickets.cr_priority
+      series:
+        - label: Cumplió
+          color: "#10B981"
+        - label: Incumplió
+          color: "#DC2626"
+      dataSource: >
+        cr_slainstances joined cr_tickets
+        GROUP BY cr_tickets.cr_priority
+
+    - id: sla_by_category
+      type: horizontalBar
+      title: Cumplimiento SLA por Categoría
+      dataSource: >
+        cr_slainstances joined cr_tickets joined cr_categories
+        GROUP BY cr_categories.cr_name
+        ORDER BY compliance_pct ASC
+      colors:
+        met: "#10B981"
+        breached: "#DC2626"
+
+    - id: sla_by_technician
+      type: table
+      title: Desempeño SLA por Técnico
+      columns:
+        - field: technician_name
+          label: Técnico
+        - field: total_tickets
+          label: Total
+        - field: first_response_pct
+          label: "1ra Resp. %"
+          conditionalFormat:
+            green: ">= 95"
+            yellow: ">= 85"
+            red: "< 85"
+        - field: diagnosis_pct
+          label: "Diagnóst. %"
+          conditionalFormat:
+            green: ">= 90"
+            yellow: ">= 80"
+            red: "< 80"
+        - field: resolution_pct
+          label: "Resolución %"
+          conditionalFormat:
+            green: ">= 90"
+            yellow: ">= 80"
+            red: "< 80"
+        - field: avg_resolution_hours
+          label: "Prom. Horas"
+      sortBy: resolution_pct
+      sortDirection: asc
+
+    - id: breach_heatmap
+      type: heatmap
+      title: Mapa de Calor – Brechas por Día y Hora
+      description: >
+        Identifies when SLA breaches most frequently occur
+        (day of week vs hour of day) to improve staffing
+      xAxis: hour_of_day (0-23)
+      yAxis: day_of_week (Lun-Dom)
+      value: count of breached SLA instances
+      colorScale:
+        low: "#DCFCE7"     # light green
+        medium: "#FEF08A"  # yellow
+        high: "#FCA5A5"    # light red
+        critical: "#DC2626" # red
+
+  slaMatrix:
+    description: >
+      Reference SLA targets per priority level, sourced from
+      cr_slapolicies table.
+    columns:
+      - priority
+      - first_response_hours
+      - diagnosis_hours
+      - resolution_hours
+    data:
+      - priority: Crítica
+        first_response: 1h
+        diagnosis: 4h
+        resolution: 8h
+      - priority: Alta
+        first_response: 2h
+        diagnosis: 8h
+        resolution: 24h
+      - priority: Media
+        first_response: 4h
+        diagnosis: 24h
+        resolution: 72h
+      - priority: Baja
+        first_response: 8h
+        diagnosis: 48h
+        resolution: 120h
+
+  powerBiEmbed:
+    workspace: "Zamorano - Mantenimiento"
+    reportName: "SLA Performance"
+    embedUrl: "<configure-after-publish>"

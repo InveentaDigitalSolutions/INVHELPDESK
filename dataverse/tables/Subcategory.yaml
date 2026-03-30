@@ -1,0 +1,105 @@
+# Subcategory Table Schema
+# Mesa de Ayuda de Mantenimiento - Zamorano University
+
+table:
+  schema_name: cr_subcategory
+  display_name: Subcategory
+  plural_name: Subcategories
+  description: Detailed service subcategories under each category
+  ownership: Organization
+  primary_column: name
+
+columns:
+  - name: subcategory_id
+    display_name: Subcategory ID
+    type: Autonumber
+    format: "SCAT-{SEQNUM:4}"
+    description: Auto-generated unique identifier
+
+  - name: category_id
+    display_name: Category
+    type: Lookup
+    target_table: cr_category
+    required: true
+    description: Parent category
+
+  - name: name
+    display_name: Subcategory Name
+    type: SingleLineText
+    max_length: 100
+    required: true
+    description: Subcategory name
+
+  - name: default_assigned_team
+    display_name: Default Assigned Team
+    type: Lookup
+    target_table: team
+    required: false
+    description: Team automatically assigned for this subcategory
+
+  - name: is_active
+    display_name: Is Active
+    type: Boolean
+    default: true
+    description: Whether the subcategory is currently active
+
+views:
+  - name: Active Subcategories
+    description: All active subcategories
+    filter: is_active eq true
+    columns: [subcategory_id, name, category_id, default_assigned_team]
+    sort: name asc
+
+  - name: Subcategories by Category
+    description: Active subcategories grouped by parent category
+    filter: is_active eq true
+    columns: [name, category_id, default_assigned_team]
+    group_by: category_id
+    sort: name asc
+
+sample_data:
+  # Eléctrico subcategories
+  - name: Apagones / Sin Electricidad
+    category: Eléctrico
+    is_active: true
+  - name: Cortocircuito
+    category: Eléctrico
+    is_active: true
+  - name: Luminarias Dañadas
+    category: Eléctrico
+    is_active: true
+  - name: Tomacorrientes Dañados
+    category: Eléctrico
+    is_active: true
+  - name: Cableado Expuesto
+    category: Eléctrico
+    is_active: true
+  # Plomería subcategories
+  - name: Fuga de Agua
+    category: Plomería
+    is_active: true
+  - name: Tubería Rota
+    category: Plomería
+    is_active: true
+  - name: Sanitario Dañado
+    category: Plomería
+    is_active: true
+  - name: Lavamanos Dañado
+    category: Plomería
+    is_active: true
+  - name: Drenaje Obstruido
+    category: Plomería
+    is_active: true
+  # Carpintería subcategories
+  - name: Puerta Dañada
+    category: Carpintería
+    is_active: true
+  - name: Ventana Rota
+    category: Carpintería
+    is_active: true
+  - name: Mobiliario Dañado
+    category: Carpintería
+    is_active: true
+  - name: Cielo Falso Dañado
+    category: Carpintería
+    is_active: true

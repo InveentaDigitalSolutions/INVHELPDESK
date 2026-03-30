@@ -1,0 +1,84 @@
+# ════════════════════════════════════════════════════════════════
+# Power Automate Flow: Ticket Closure & Survey Trigger
+# Trigger: When a Ticket is modified (status → Closed)
+# Purpose: Mark SLA instance, trigger satisfaction survey
+#          notification to requester
+# ════════════════════════════════════════════════════════════════
+
+flow:
+  name: COAP – Ticket Closure & Survey
+  description: >
+    When a ticket status changes to Closed, finalize the SLA
+    instance (mark resolution_met), deactivate it, and send
+    a satisfaction survey notification to the requester.
+  trigger:
+    type: automated
+    connector: Dataverse
+    action: When a row is modified
+    table: cr_tickets
+    filter: cr_status eq 6   # Closed
+    scope: Organization
+
+  steps:
+    # 1. Get the active SLA instance for this ticket
+    - id: get_sla_instance
+      action: Dataverse – List rows
+      table: cr_slainstances
+      filter: "_cr_ticket_value eq @{triggerOutputs()?['body/cr_ticketid']} and cr_is_active eq true"
+      top: 1
+
+    # 2. Update SLA instance – mark resolution as met if within deadline
+    - id: finalize_sla
+      action: Dataverse – Update a row
+      table: cr_slainstances
+      row_id: "@{first(outputs('get_sla_instance')?['body/value'])?['cr_slainstanceid']}"
+      body:
+        cr_resolution_met: "@{lessOrEquals(utcNow(), first(outputs('get_sla_instance')?['body/value'])?['cr_resolution_deadline'])}"
+        cr_is_active: false
+
+    # 3. Get requester info
+    - id: get_requester
+      action: Dataverse – Get a row by ID
+      table: systemusers
+      row_id: "@{triggerOutputs()?['body/cr_reported_by']}"
+
+    # 4. Send survey email
+    - id: send_survey_email
+      action: Send an email (V2)
+      to: "@{outputs('get_requester')?['body/internalemailaddress']}"
+      subject: "Tu ticket #@{triggerOutputs()?['body/cr_ticket_number']} ha sido cerrado – Encuesta"
+      body: >
+        Hola @{outputs('get_requester')?['body/firstname']},
+
+        Tu ticket de mantenimiento ha sido resuelto y cerrado.
+
+        **Ticket:** #@{triggerOutputs()?['body/cr_ticket_number']}
+        **Título:** @{triggerOutputs()?['body/cr_title']}
+        **Resolución:** @{triggerOutputs()?['body/cr_resolution_notes']}
+
+        Por favor, toma un momento para completar la encuesta de satisfacción
+        en la app de solicitantes. Tu opinión nos ayuda a mejorar.
+
+        Gracias,
+        Departamento de Mantenimiento – Zamorano
+
+    # 5. Send push notification (Teams adaptive card, optional)
+    - id: send_teams_card
+      action: Post adaptive card in a chat or channel (Teams)
+      optional: true
+      body:
+        type: AdaptiveCard
+        version: "1.4"
+        body:
+          - type: TextBlock
+            text: "✅ Ticket cerrado: #@{triggerOutputs()?['body/cr_ticket_number']}"
+            weight: Bolder
+          - type: TextBlock
+            text: "@{triggerOutputs()?['body/cr_title']}"
+          - type: TextBlock
+            text: "Por favor completa la encuesta de satisfacción."
+            wrap: true
+        actions:
+          - type: Action.OpenUrl
+            title: Completar Encuesta
+            url: "https://apps.powerapps.com/play/<app-id>?ticketId=@{triggerOutputs()?['body/cr_ticketid']}"

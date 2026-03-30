@@ -1,0 +1,178 @@
+# ════════════════════════════════════════════════════════════════
+# Power Automate Flow: Weekly Summary Report
+# Trigger: Scheduled – Every Monday at 07:00 AM CST
+# Purpose: Compile weekly KPIs and email a summary to
+#          supervisors and management
+# ════════════════════════════════════════════════════════════════
+
+flow:
+  name: COAP – Weekly Summary Report
+  description: >
+    Runs every Monday morning. Gathers the prior week's ticket
+    metrics (opened, closed, SLA compliance, costs, satisfaction)
+    and sends a formatted HTML email to the supervisors and
+    department heads.
+  trigger:
+    type: scheduled
+    frequency: Week
+    interval: 1
+    schedule:
+      onDays: [Monday]
+      atTimes: ["07:00"]
+    timeZone: Central Standard Time
+
+  steps:
+    # 1. Calculate date range (last Mon 00:00 → Sun 23:59)
+    - id: calc_dates
+      action: Compose
+      inputs:
+        weekStart: "@{addDays(utcNow(), -7, 'yyyy-MM-ddT00:00:00Z')}"
+        weekEnd: "@{addDays(utcNow(), -1, 'yyyy-MM-ddT23:59:59Z')}"
+
+    # 2. Tickets created this week
+    - id: tickets_created
+      action: Dataverse – List rows
+      table: cr_tickets
+      filter: "cr_created_on ge @{outputs('calc_dates')['weekStart']} and cr_created_on le @{outputs('calc_dates')['weekEnd']}"
+      select: cr_ticketid, cr_ticket_number, cr_priority, cr_status, cr_category
+
+    # 3. Tickets closed this week
+    - id: tickets_closed
+      action: Dataverse – List rows
+      table: cr_tickets
+      filter: "cr_closed_date ge @{outputs('calc_dates')['weekStart']} and cr_closed_date le @{outputs('calc_dates')['weekEnd']}"
+      select: cr_ticketid, cr_ticket_number, cr_resolution_time_hours
+
+    # 4. SLA instances finalized this week
+    - id: sla_instances
+      action: Dataverse – List rows
+      table: cr_slainstances
+      filter: "cr_is_active eq false and modifiedon ge @{outputs('calc_dates')['weekStart']}"
+      select: cr_first_response_met, cr_resolution_met
+
+    # 5. Surveys submitted this week
+    - id: surveys
+      action: Dataverse – List rows
+      table: cr_surveyresponses
+      filter: "cr_submitted_on ge @{outputs('calc_dates')['weekStart']}"
+      select: cr_overall_satisfaction
+
+    # 6. Material costs this week
+    - id: materials
+      action: Dataverse – List rows
+      table: cr_materialrequests
+      filter: "cr_status eq 3 and modifiedon ge @{outputs('calc_dates')['weekStart']}"
+      select: cr_unit_cost, cr_quantity
+
+    # 7. Compute KPIs with expressions
+    - id: compute_kpis
+      action: Compose
+      inputs:
+        total_created: "@{length(outputs('tickets_created')?['body/value'])}"
+        total_closed: "@{length(outputs('tickets_closed')?['body/value'])}"
+        avg_resolution_hours: >
+          @{if(equals(length(outputs('tickets_closed')?['body/value']), 0), 0,
+            div(
+              sum(outputs('tickets_closed')?['body/value'], 'cr_resolution_time_hours'),
+              length(outputs('tickets_closed')?['body/value'])
+            ))}
+        sla_compliance_pct: >
+          @{if(equals(length(outputs('sla_instances')?['body/value']), 0), 100,
+            mul(
+              div(
+                length(filter(outputs('sla_instances')?['body/value'], item => item['cr_resolution_met'] == true)),
+                length(outputs('sla_instances')?['body/value'])
+              ), 100
+            ))}
+        avg_satisfaction: >
+          @{if(equals(length(outputs('surveys')?['body/value']), 0), 'N/A',
+            div(
+              sum(outputs('surveys')?['body/value'], 'cr_overall_satisfaction'),
+              length(outputs('surveys')?['body/value'])
+            ))}
+        total_material_cost: >
+          @{sum(
+            outputs('materials')?['body/value'],
+            mul(item()['cr_unit_cost'], item()['cr_quantity'])
+          )}
+
+    # 8. Count by priority
+    - id: count_by_priority
+      action: Compose
+      inputs:
+        critical: "@{length(filter(outputs('tickets_created')?['body/value'], item => item['cr_priority'] == 1))}"
+        high: "@{length(filter(outputs('tickets_created')?['body/value'], item => item['cr_priority'] == 2))}"
+        medium: "@{length(filter(outputs('tickets_created')?['body/value'], item => item['cr_priority'] == 3))}"
+        low: "@{length(filter(outputs('tickets_created')?['body/value'], item => item['cr_priority'] == 4))}"
+
+    # 9. Send summary email
+    - id: send_report
+      action: Send an email (V2)
+      to: "supervisores@zamorano.edu"
+      cc: "director.mantenimiento@zamorano.edu"
+      subject: "Reporte Semanal – Mesa de Ayuda Mantenimiento (@{formatDateTime(outputs('calc_dates')['weekStart'], 'dd/MM')} – @{formatDateTime(outputs('calc_dates')['weekEnd'], 'dd/MM/yyyy')})"
+      body: >
+        <html>
+        <body style="font-family: 'Segoe UI', Arial, sans-serif; color: #333;">
+          <div style="background: #00643E; color: white; padding: 16px 24px; border-radius: 8px 8px 0 0;">
+            <h2 style="margin: 0;">📊 Reporte Semanal – Mesa de Ayuda</h2>
+            <p style="margin: 4px 0 0; opacity: 0.9;">
+              @{formatDateTime(outputs('calc_dates')['weekStart'], 'dd/MM/yyyy')} –
+              @{formatDateTime(outputs('calc_dates')['weekEnd'], 'dd/MM/yyyy')}
+            </p>
+          </div>
+
+          <div style="padding: 24px; background: #f9f9f9;">
+            <!-- KPI Cards Row -->
+            <table width="100%" cellpadding="0" cellspacing="8">
+              <tr>
+                <td style="background: white; padding: 16px; border-radius: 8px; text-align: center; width: 20%;">
+                  <div style="font-size: 28px; font-weight: bold; color: #00643E;">@{outputs('compute_kpis')['total_created']}</div>
+                  <div style="font-size: 12px; color: #666;">Tickets Creados</div>
+                </td>
+                <td style="background: white; padding: 16px; border-radius: 8px; text-align: center; width: 20%;">
+                  <div style="font-size: 28px; font-weight: bold; color: #00643E;">@{outputs('compute_kpis')['total_closed']}</div>
+                  <div style="font-size: 12px; color: #666;">Tickets Cerrados</div>
+                </td>
+                <td style="background: white; padding: 16px; border-radius: 8px; text-align: center; width: 20%;">
+                  <div style="font-size: 28px; font-weight: bold; color: @{if(less(outputs('compute_kpis')['sla_compliance_pct'], 90), '#DC2626', '#00643E')};">@{outputs('compute_kpis')['sla_compliance_pct']}%</div>
+                  <div style="font-size: 12px; color: #666;">Cumplimiento SLA</div>
+                </td>
+                <td style="background: white; padding: 16px; border-radius: 8px; text-align: center; width: 20%;">
+                  <div style="font-size: 28px; font-weight: bold; color: #00643E;">@{outputs('compute_kpis')['avg_resolution_hours']}h</div>
+                  <div style="font-size: 12px; color: #666;">Resolución Promedio</div>
+                </td>
+                <td style="background: white; padding: 16px; border-radius: 8px; text-align: center; width: 20%;">
+                  <div style="font-size: 28px; font-weight: bold; color: #00643E;">@{outputs('compute_kpis')['avg_satisfaction']}/5</div>
+                  <div style="font-size: 12px; color: #666;">Satisfacción</div>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Priority Breakdown -->
+            <h3 style="margin: 24px 0 8px; color: #00643E;">Distribución por Prioridad</h3>
+            <table width="100%" cellpadding="8" cellspacing="0" style="background: white; border-radius: 8px;">
+              <tr style="background: #f0f0f0;">
+                <th align="left">Prioridad</th>
+                <th>Cantidad</th>
+              </tr>
+              <tr><td>🔴 Crítica</td><td align="center"><b>@{outputs('count_by_priority')['critical']}</b></td></tr>
+              <tr><td>🟠 Alta</td><td align="center"><b>@{outputs('count_by_priority')['high']}</b></td></tr>
+              <tr><td>🟡 Media</td><td align="center"><b>@{outputs('count_by_priority')['medium']}</b></td></tr>
+              <tr><td>🟢 Baja</td><td align="center"><b>@{outputs('count_by_priority')['low']}</b></td></tr>
+            </table>
+
+            <!-- Costs -->
+            <h3 style="margin: 24px 0 8px; color: #00643E;">Costos de Materiales</h3>
+            <p style="background: white; padding: 16px; border-radius: 8px;">
+              Total aprobado esta semana: <b>L @{outputs('compute_kpis')['total_material_cost']}</b>
+            </p>
+          </div>
+
+          <div style="padding: 12px 24px; background: #e8e8e8; border-radius: 0 0 8px 8px; font-size: 12px; color: #666;">
+            Generado automáticamente por el sistema COAP – Mesa de Ayuda de Mantenimiento, Zamorano
+          </div>
+        </body>
+        </html>
+      importance: Normal
+      isHtml: true

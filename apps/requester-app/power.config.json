@@ -1,0 +1,14 @@
+{
+  "version": "1.0",
+  "appId": null,
+  "appDisplayName": "Mesa de Ayuda - Solicitante",
+  "region": "prod",
+  "environmentId": "94283d50-c20e-e585-aade-876895af0d0d",
+  "description": "App de solicitud de tickets de mantenimiento para Zamorano",
+  "buildPath": "dist",
+  "buildEntryPoint": "index.html",
+  "localAppUrl": "http://localhost:5173",
+  "logoPath": "public/favicon.svg",
+  "connectionReferences": {},
+  "databaseReferences": {}
+}

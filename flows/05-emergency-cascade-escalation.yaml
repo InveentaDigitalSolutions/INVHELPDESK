@@ -1,0 +1,164 @@
+# ════════════════════════════════════════════════════════════════
+# Power Automate Flow: Emergency Cascade Escalation
+# Trigger: Automated – When a Ticket is modified (priority 1)
+# Purpose: Cascade escalation when a critical ticket is not
+#          acknowledged within 15 min / not assigned within 30 min
+# ════════════════════════════════════════════════════════════════
+
+flow:
+  name: COAP – Emergency Cascade Escalation
+  description: >
+    For critical (Priority 1) tickets, if no technician acknowledges
+    within 15 minutes or no work begins within 30 minutes, escalate
+    through the chain: technician → supervisor → department head.
+  trigger:
+    type: automated
+    connector: Dataverse
+    action: When a row is added or modified
+    table: cr_tickets
+    filter: cr_priority eq 1   # Critical
+    scope: Organization
+
+  settings:
+    concurrency:
+      maximumWaitingRuns: 5
+
+  steps:
+    # 1. Only continue if ticket is still Open or Assigned (not already In Progress)
+    - id: check_status
+      action: Condition
+      expression: "@{or(equals(triggerOutputs()?['body/cr_status'], 1), equals(triggerOutputs()?['body/cr_status'], 2))}"
+      if_false:
+        - action: Terminate
+          status: Succeeded
+          message: Ticket already in progress or later stage; no escalation needed
+
+    # ──── LEVEL 1: Wait 15 min for technician acknowledgement ────
+    - id: delay_15min
+      action: Delay
+      duration: PT15M
+
+    - id: recheck_ticket_l1
+      action: Dataverse – Get a row by ID
+      table: cr_tickets
+      row_id: "@{triggerOutputs()?['body/cr_ticketid']}"
+
+    - id: check_acknowledged
+      action: Condition
+      expression: "@{greaterOrEquals(outputs('recheck_ticket_l1')?['body/cr_status'], 3)}"
+      description: Status >= In Progress means acknowledged
+      if_true:
+        - action: Terminate
+          status: Succeeded
+          message: Technician acknowledged within 15 min
+      if_false:
+        # Notify assigned technician urgently
+        - id: get_technician
+          action: Dataverse – Get a row by ID
+          table: systemusers
+          row_id: "@{outputs('recheck_ticket_l1')?['body/cr_assigned_to']}"
+          run_after: check_acknowledged
+
+        - id: send_l1_alert
+          action: Send an email (V2)
+          to: "@{outputs('get_technician')?['body/internalemailaddress']}"
+          importance: High
+          subject: "🚨 URGENTE: Ticket crítico #@{outputs('recheck_ticket_l1')?['body/cr_ticket_number']} sin atender"
+          body: >
+            ALERTA DE ESCALAMIENTO – NIVEL 1
+
+            El ticket crítico #@{outputs('recheck_ticket_l1')?['body/cr_ticket_number']}
+            "@@{outputs('recheck_ticket_l1')?['body/cr_title']}" no ha sido atendido
+            en 15 minutos.
+
+            Por favor, atiéndelo de inmediato o será escalado al supervisor.
+
+    # ──── LEVEL 2: Wait another 15 min (30 min total) for supervisor ────
+    - id: delay_30min
+      action: Delay
+      duration: PT15M
+
+    - id: recheck_ticket_l2
+      action: Dataverse – Get a row by ID
+      table: cr_tickets
+      row_id: "@{triggerOutputs()?['body/cr_ticketid']}"
+
+    - id: check_inprogress
+      action: Condition
+      expression: "@{greaterOrEquals(outputs('recheck_ticket_l2')?['body/cr_status'], 3)}"
+      if_true:
+        - action: Terminate
+          status: Succeeded
+          message: Technician started work within 30 min
+      if_false:
+        # Get supervisor for the ticket's department
+        - id: get_category
+          action: Dataverse – Get a row by ID
+          table: cr_categories
+          row_id: "@{outputs('recheck_ticket_l2')?['body/_cr_category_value']}"
+
+        - id: get_department
+          action: Dataverse – Get a row by ID
+          table: cr_departments
+          row_id: "@{outputs('get_category')?['body/_cr_department_value']}"
+
+        - id: send_l2_alert
+          action: Send an email (V2)
+          to: "@{outputs('get_department')?['body/cr_head_email']}"
+          cc: "@{outputs('get_technician')?['body/internalemailaddress']}"
+          importance: High
+          subject: "🚨🚨 ESCALAMIENTO: Ticket crítico #@{outputs('recheck_ticket_l2')?['body/cr_ticket_number']} – 30 min sin atender"
+          body: >
+            ALERTA DE ESCALAMIENTO – NIVEL 2 (SUPERVISOR)
+
+            El ticket crítico #@{outputs('recheck_ticket_l2')?['body/cr_ticket_number']}
+            "@@{outputs('recheck_ticket_l2')?['body/cr_title']}" no ha sido atendido
+            en 30 minutos.
+
+            Categoría: @{outputs('get_category')?['body/cr_name']}
+            Departamento: @{outputs('get_department')?['body/cr_name']}
+            Técnico asignado: @{outputs('get_technician')?['body/fullname']}
+
+            Se requiere intervención inmediata o reasignación del ticket.
+
+    # ──── LEVEL 3: Wait another 30 min (60 min total) for dept head ────
+    - id: delay_60min
+      action: Delay
+      duration: PT30M
+
+    - id: recheck_ticket_l3
+      action: Dataverse – Get a row by ID
+      table: cr_tickets
+      row_id: "@{triggerOutputs()?['body/cr_ticketid']}"
+
+    - id: check_final
+      action: Condition
+      expression: "@{greaterOrEquals(outputs('recheck_ticket_l3')?['body/cr_status'], 3)}"
+      if_true:
+        - action: Terminate
+          status: Succeeded
+          message: Ticket now in progress after L2 escalation
+      if_false:
+        - id: send_l3_alert
+          action: Send an email (V2)
+          to: "director.mantenimiento@zamorano.edu"
+          cc: "@{outputs('get_department')?['body/cr_head_email']};@{outputs('get_technician')?['body/internalemailaddress']}"
+          importance: High
+          subject: "🚨🚨🚨 ESCALAMIENTO FINAL: Ticket crítico #@{outputs('recheck_ticket_l3')?['body/cr_ticket_number']} – 60 min sin atender"
+          body: >
+            ALERTA DE ESCALAMIENTO – NIVEL 3 (DIRECCIÓN)
+
+            El ticket crítico #@{outputs('recheck_ticket_l3')?['body/cr_ticket_number']}
+            "@@{outputs('recheck_ticket_l3')?['body/cr_title']}" NO ha sido atendido
+            en 60 minutos. Se han enviado alertas a nivel técnico y supervisor
+            sin respuesta.
+
+            Se requiere intervención directiva para garantizar la resolución.
+
+        # Update ticket to mark it as escalated
+        - id: mark_escalated
+          action: Dataverse – Update a row
+          table: cr_tickets
+          row_id: "@{triggerOutputs()?['body/cr_ticketid']}"
+          body:
+            cr_is_escalated: true

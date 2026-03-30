@@ -1,0 +1,54 @@
+# Department Table Schema
+# Mesa de Ayuda de Mantenimiento - Zamorano University
+
+table:
+  schema_name: cr_department
+  display_name: Department
+  plural_name: Departments
+  description: University departments that can request and provide services
+  ownership: Organization
+  primary_column: name
+
+columns:
+  - name: department_id
+    display_name: Department ID
+    type: Autonumber
+    format: "DEPT-{SEQNUM:4}"
+    description: Auto-generated unique identifier
+
+  - name: name
+    display_name: Department Name
+    type: SingleLineText
+    max_length: 100
+    required: true
+    description: "Name of the department (e.g., Mantenimiento, IT, Transporte, Seguridad)"
+
+  - name: is_active
+    display_name: Is Active
+    type: Boolean
+    default: true
+    description: Whether the department is currently active
+
+views:
+  - name: Active Departments
+    description: All active departments
+    filter: is_active eq true
+    columns: [department_id, name, is_active]
+    sort: name asc
+
+  - name: All Departments
+    description: All departments including inactive
+    columns: [department_id, name, is_active]
+    sort: name asc
+
+sample_data:
+  - name: Mantenimiento
+    is_active: true
+  - name: IT / Tecnología
+    is_active: true
+  - name: Transporte
+    is_active: true
+  - name: Seguridad
+    is_active: true
+  - name: Servicios Generales
+    is_active: true

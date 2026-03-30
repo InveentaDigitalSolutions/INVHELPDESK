@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/components/prioritybadge.tsx","./src/components/statusbadge.tsx","./src/pages/closeticketscreen.tsx","./src/pages/dashboardscreen.tsx","./src/pages/materialrequestscreen.tsx","./src/pages/ticketdetailscreen.tsx","./src/pages/timelogscreen.tsx","./src/pages/workorderscreen.tsx","./src/utils/mocktechniciandata.ts"],"version":"5.7.3"}

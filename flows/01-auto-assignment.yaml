@@ -1,0 +1,114 @@
+# ════════════════════════════════════════════════════════════════
+# Power Automate Flow: Auto-Assignment
+# Trigger: When a Ticket row is created (Dataverse)
+# Purpose: Auto-assign technician based on category → department
+#          mapping + workload balancing
+# ════════════════════════════════════════════════════════════════
+
+flow:
+  name: COAP – Auto-Assignment
+  description: >
+    When a new ticket is created, look up the category's department,
+    find available technicians in that department sorted by current
+    workload (ascending), and assign the one with the fewest open tickets.
+    Also creates the initial SLA Instance record.
+  trigger:
+    type: automated
+    connector: Dataverse
+    action: When a row is added
+    table: cr_tickets
+    scope: Organization
+
+  steps:
+    # 1. Get category → department
+    - id: get_category
+      action: Dataverse – Get a row by ID
+      table: cr_categories
+      row_id: "@{triggerOutputs()?['body/_cr_category_value']}"
+
+    # 2. Find SLA Policy for this priority
+    - id: get_sla_policy
+      action: Dataverse – List rows
+      table: cr_slapolicies
+      filter: "cr_priority eq @{triggerOutputs()?['body/cr_priority']} and cr_is_active eq true"
+      top: 1
+
+    # 3. Find available technicians in department (sorted by open ticket count)
+    - id: list_technicians
+      action: Dataverse – List rows
+      table: systemusers
+      filter: >
+        _cr_department_value eq @{outputs('get_category')?['body/_cr_department_value']}
+        and cr_is_active eq true
+      select: systemuserid, fullname
+      # Note: In production, use a Custom API or FetchXML to sort by
+      # COUNT of open tickets per technician (workload balancing).
+
+    # 4. Select technician with lowest workload (first in sorted list)
+    - id: select_technician
+      action: Compose
+      expression: "first(outputs('list_technicians')?['body/value'])"
+
+    # 5. Check if emergency – override assignment if so
+    - id: check_emergency
+      action: Condition
+      expression: "@equals(triggerOutputs()?['body/cr_priority'], 1)"
+      # Priority 1 = Critical (Emergency)
+
+    # 5a. If emergency – assign lead technician of department
+    - id: assign_emergency
+      action: Dataverse – Update a row
+      condition: check_emergency is true
+      table: cr_tickets
+      row_id: "@{triggerOutputs()?['body/cr_ticketid']}"
+      body:
+        cr_status: 2  # Assigned
+        _cr_assigned_to_value: "@{outputs('get_department_lead')}"
+        cr_eta: "@{addHours(utcNow(), 4)}"
+
+    # 5b. Normal assignment
+    - id: assign_normal
+      action: Dataverse – Update a row
+      condition: check_emergency is false
+      table: cr_tickets
+      row_id: "@{triggerOutputs()?['body/cr_ticketid']}"
+      body:
+        cr_status: 2  # Assigned
+        _cr_assigned_to_value: "@{outputs('select_technician')?['systemuserid']}"
+
+    # 6. Create SLA Instance
+    - id: create_sla_instance
+      action: Dataverse – Add a new row
+      table: cr_slainstances
+      body:
+        _cr_ticket_value: "@{triggerOutputs()?['body/cr_ticketid']}"
+        _cr_sla_policy_value: "@{first(outputs('get_sla_policy')?['body/value'])?['cr_slapolicyid']}"
+        cr_first_response_deadline: "@{addMinutes(utcNow(), first(outputs('get_sla_policy')?['body/value'])?['cr_first_response_minutes'])}"
+        cr_diagnosis_deadline: "@{addHours(utcNow(), first(outputs('get_sla_policy')?['body/value'])?['cr_diagnosis_time_hours'])}"
+        cr_resolution_deadline: "@{addHours(utcNow(), first(outputs('get_sla_policy')?['body/value'])?['cr_resolution_time_hours'])}"
+        cr_is_active: true
+
+    # 7. Notify assigned technician
+    - id: notify_technician
+      action: Send an email (V2)
+      to: "@{outputs('select_technician')?['internalemailaddress']}"
+      subject: "Nuevo ticket asignado: #@{triggerOutputs()?['body/cr_ticket_number']}"
+      body: >
+        Se te ha asignado un nuevo ticket de mantenimiento.
+
+        **Ticket:** #@{triggerOutputs()?['body/cr_ticket_number']}
+        **Título:** @{triggerOutputs()?['body/cr_title']}
+        **Prioridad:** @{triggerOutputs()?['body/cr_priority']}
+        **Ubicación:** @{triggerOutputs()?['body/cr_location_name']}
+
+        Por favor revisa y confirma en la app de técnicos.
+
+  error_handling:
+    scope: try-catch
+    on_failure:
+      - action: Dataverse – Add a new row
+        table: cr_audit_logs
+        body:
+          cr_flow: Auto-Assignment
+          cr_error: "@{result('assign_normal')?['error']}"
+          cr_ticket_id: "@{triggerOutputs()?['body/cr_ticketid']}"

@@ -1,0 +1,111 @@
+# ════════════════════════════════════════════════════════════════
+# Power Automate Flow: SLA Timer & Breach Alerts
+# Trigger: Recurrence (every 15 minutes)
+# Purpose: Check active SLA instances for approaching / breached
+#          deadlines and send escalation notifications
+# ════════════════════════════════════════════════════════════════
+
+flow:
+  name: COAP – SLA Timer Monitor
+  description: >
+    Runs every 15 minutes. Queries all active SLA instances where
+    deadlines are approaching (< 1 hour) or breached. Sends
+    notifications to the assigned technician and supervisor.
+    Updates SLA met/breached flags.
+  trigger:
+    type: scheduled
+    recurrence:
+      frequency: Minute
+      interval: 15
+
+  steps:
+    # 1. Find SLA instances approaching first response deadline
+    - id: approaching_first_response
+      action: Dataverse – List rows
+      table: cr_slainstances
+      filter: >
+        cr_is_active eq true
+        and cr_first_response_met eq null
+        and cr_first_response_deadline le @{addHours(utcNow(), 1)}
+        and cr_first_response_deadline gt @{utcNow()}
+
+    # 2. For each approaching – send warning notification
+    - id: warn_first_response
+      action: Apply to each
+      items: "@{outputs('approaching_first_response')?['body/value']}"
+      actions:
+        - action: Send an email (V2)
+          to: "technician + supervisor"
+          subject: "⚠️ SLA Primera Respuesta próximo a vencer – Ticket #@{items('warn_first_response')?['cr_ticket_number']}"
+          body: >
+            El deadline de primera respuesta vence en menos de 1 hora.
+            **Deadline:** @{items('warn_first_response')?['cr_first_response_deadline']}
+
+    # 3. Find breached first response
+    - id: breached_first_response
+      action: Dataverse – List rows
+      table: cr_slainstances
+      filter: >
+        cr_is_active eq true
+        and cr_first_response_met eq null
+        and cr_first_response_deadline lt @{utcNow()}
+
+    # 4. Mark as breached and notify
+    - id: mark_breached_fr
+      action: Apply to each
+      items: "@{outputs('breached_first_response')?['body/value']}"
+      actions:
+        - action: Dataverse – Update a row
+          table: cr_slainstances
+          row_id: "@{items('mark_breached_fr')?['cr_slainstanceid']}"
+          body:
+            cr_first_response_met: false
+        - action: Send an email (V2)
+          to: supervisor
+          subject: "🚨 SLA BREACHED – Primera Respuesta – Ticket #@{items('mark_breached_fr')?['cr_ticket_number']}"
+          body: "El deadline de primera respuesta fue excedido. Requiere intervención inmediata."
+
+    # 5. Repeat similar logic for diagnosis and resolution deadlines
+    - id: check_diagnosis_deadline
+      action: Dataverse – List rows
+      table: cr_slainstances
+      filter: >
+        cr_is_active eq true
+        and cr_diagnosis_met eq null
+        and cr_diagnosis_deadline lt @{utcNow()}
+
+    - id: mark_breached_diag
+      action: Apply to each
+      items: "@{outputs('check_diagnosis_deadline')?['body/value']}"
+      actions:
+        - action: Dataverse – Update a row
+          table: cr_slainstances
+          row_id: "@{items('mark_breached_diag')?['cr_slainstanceid']}"
+          body:
+            cr_diagnosis_met: false
+
+    - id: check_resolution_deadline
+      action: Dataverse – List rows
+      table: cr_slainstances
+      filter: >
+        cr_is_active eq true
+        and cr_resolution_met eq null
+        and cr_resolution_deadline lt @{utcNow()}
+
+    - id: mark_breached_res
+      action: Apply to each
+      items: "@{outputs('check_resolution_deadline')?['body/value']}"
+      actions:
+        - action: Dataverse – Update a row
+          table: cr_slainstances
+          row_id: "@{items('mark_breached_res')?['cr_slainstanceid']}"
+          body:
+            cr_resolution_met: false
+        - action: Send an email (V2)
+          to: supervisor
+          subject: "🚨 SLA BREACHED – Resolución – Ticket #@{items('mark_breached_res')?['cr_ticket_number']}"
+          body: "El deadline de resolución fue excedido."
+
+  concurrency:
+    max_runs: 1
+    # Prevent overlapping runs

@@ -1,0 +1,101 @@
+# ════════════════════════════════════════════════════════════════
+# Power Automate Flow: Material Approval Workflow
+# Trigger: When a Material Request row is added or modified
+# Purpose: Route material requests through supervisor approval
+#          when total cost exceeds threshold
+# ════════════════════════════════════════════════════════════════
+
+flow:
+  name: COAP – Material Approval
+  description: >
+    When a material request is created or its status changes to
+    "Requested", check if total materials cost for the ticket
+    exceeds the auto-approval threshold (L 500). If so, send
+    approval to supervisor. Otherwise, auto-approve.
+  trigger:
+    type: automated
+    connector: Dataverse
+    action: When a row is added or modified
+    table: cr_materialrequests
+    filter: cr_status eq 2   # Requested
+    scope: Organization
+
+  constants:
+    auto_approval_threshold: 500  # Lempiras
+
+  steps:
+    # 1. Get the parent ticket
+    - id: get_ticket
+      action: Dataverse – Get a row by ID
+      table: cr_tickets
+      row_id: "@{triggerOutputs()?['body/_cr_ticket_value']}"
+
+    # 2. Sum all material costs for this ticket
+    - id: sum_materials
+      action: Dataverse – List rows
+      table: cr_materialrequests
+      filter: "_cr_ticket_value eq @{triggerOutputs()?['body/_cr_ticket_value']}"
+
+    - id: calculate_total
+      action: Compose
+      expression: >
+        @{sum(outputs('sum_materials')?['body/value'],
+          mul(item()?['cr_quantity'], item()?['cr_unit_cost']))}
+
+    # 3. Check threshold
+    - id: check_threshold
+      action: Condition
+      expression: "@greater(outputs('calculate_total'), 500)"
+
+    # 3a. Over threshold → request supervisor approval
+    - id: request_approval
+      condition: check_threshold is true
+      action: Start and wait for an approval
+      approval_type: Approve/Reject – First to respond
+      title: "Aprobación de Material – Ticket #@{outputs('get_ticket')?['body/cr_ticket_number']}"
+      assigned_to: supervisor@zamorano.edu
+      details: >
+        **Material:** @{triggerOutputs()?['body/cr_material_name']}
+        **Cantidad:** @{triggerOutputs()?['body/cr_quantity']}
+        **Costo Unitario:** L @{triggerOutputs()?['body/cr_unit_cost']}
+        **Costo Total Acumulado:** L @{outputs('calculate_total')}
+
+        El costo acumulado excede el umbral de aprobación automática (L 500).
+
+    # 3a-i. If approved
+    - id: update_approved
+      condition: "request_approval outcome eq 'Approve'"
+      action: Dataverse – Update a row
+      table: cr_materialrequests
+      row_id: "@{triggerOutputs()?['body/cr_materialrequestid']}"
+      body:
+        cr_status: 3  # Approved
+        cr_approved_by: "@{outputs('request_approval')?['body/responder/userId']}"
+        cr_approved_on: "@{utcNow()}"
+
+    # 3a-ii. If rejected
+    - id: update_rejected
+      condition: "request_approval outcome eq 'Reject'"
+      action: Dataverse – Update a row
+      table: cr_materialrequests
+      row_id: "@{triggerOutputs()?['body/cr_materialrequestid']}"
+      body:
+        cr_status: 1  # Back to Required
+        cr_rejection_reason: "@{outputs('request_approval')?['body/comments']}"
+
+    # 3b. Under threshold → auto-approve
+    - id: auto_approve
+      condition: check_threshold is false
+      action: Dataverse – Update a row
+      table: cr_materialrequests
+      row_id: "@{triggerOutputs()?['body/cr_materialrequestid']}"
+      body:
+        cr_status: 3  # Approved
+        cr_approved_on: "@{utcNow()}"
+
+    # 4. Notify the technician
+    - id: notify_technician
+      action: Send an email (V2)
+      to: technician
+      subject: "Material @{if(equals(outputs('request_approval')?['body/outcome'],'Approve'),'aprobado','procesado')} – Ticket #@{outputs('get_ticket')?['body/cr_ticket_number']}"
+      body: "Tu solicitud de material ha sido procesada."

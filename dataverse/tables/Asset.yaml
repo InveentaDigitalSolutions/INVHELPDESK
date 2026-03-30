@@ -1,0 +1,104 @@
+# Asset Table Schema
+# Mesa de Ayuda de Mantenimiento - Zamorano University
+
+table:
+  schema_name: cr_asset
+  display_name: Asset
+  plural_name: Assets
+  description: Physical assets tracked for maintenance
+  ownership: Organization
+  primary_column: name
+
+columns:
+  - name: asset_id
+    display_name: Asset ID
+    type: Autonumber
+    format: "AST-{SEQNUM:5}"
+    description: Auto-generated unique identifier
+
+  - name: asset_code
+    display_name: Asset Code
+    type: SingleLineText
+    max_length: 50
+    required: true
+    unique: true
+    description: Unique asset code for identification
+
+  - name: qr_code
+    display_name: QR Code
+    type: SingleLineText
+    max_length: 200
+    required: false
+    description: QR code value for scanning
+
+  - name: name
+    display_name: Asset Name
+    type: SingleLineText
+    max_length: 200
+    required: true
+    description: Descriptive name of the asset
+
+  - name: category
+    display_name: Asset Category
+    type: SingleLineText
+    max_length: 100
+    required: false
+    description: "Type of asset (e.g., HVAC Unit, Generator, Pump)"
+
+  - name: location_id
+    display_name: Location
+    type: Lookup
+    target_table: cr_location
+    required: false
+    description: Current location of the asset
+
+  - name: purchase_date
+    display_name: Purchase Date
+    type: DateOnly
+    required: false
+    description: Date asset was purchased
+
+  - name: warranty_expiration
+    display_name: Warranty Expiration
+    type: DateOnly
+    required: false
+    description: Date warranty expires
+
+  - name: is_under_warranty
+    display_name: Under Warranty
+    type: Boolean
+    calculated: true
+    formula: "warranty_expiration >= Today()"
+    description: Whether the asset is currently under warranty
+
+  - name: is_active
+    display_name: Is Active
+    type: Boolean
+    default: true
+    description: Whether the asset is active/in service
+
+  - name: notes
+    display_name: Notes
+    type: MultiLineText
+    max_length: 5000
+    required: false
+
+views:
+  - name: Active Assets
+    description: All active assets
+    filter: is_active eq true
+    columns: [asset_id, asset_code, name, category, location_id, warranty_expiration]
+    sort: name asc
+
+  - name: Assets Under Warranty
+    description: Active assets still under warranty
+    filter: is_active eq true AND is_under_warranty eq true
+    columns: [asset_code, name, category, location_id, warranty_expiration]
+    sort: warranty_expiration asc
+
+  - name: Assets by Location
+    description: Active assets grouped by location
+    filter: is_active eq true
+    columns: [asset_code, name, category, location_id]
+    group_by: location_id
+    sort: name asc

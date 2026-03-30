@@ -1,0 +1,203 @@
+# Work Order Table Schema
+# Mesa de Ayuda de Mantenimiento - Zamorano University
+
+table:
+  schema_name: cr_work_order
+  display_name: Work Order
+  plural_name: Work Orders
+  description: Work orders linked to tickets for tracking technician work
+  ownership: Organization
+  primary_column: workorder_id
+
+columns:
+  - name: workorder_id
+    display_name: Work Order ID
+    type: Autonumber
+    format: "WO-{SEQNUM:6}"
+    description: Auto-generated work order number
+
+  - name: ticket_id
+    display_name: Ticket
+    type: Lookup
+    target_table: cr_ticket
+    required: true
+    description: Parent ticket this work order belongs to
+
+  - name: assigned_technician
+    display_name: Assigned Technician
+    type: Lookup
+    target_table: systemuser
+    required: false
+    description: Technician responsible for this work order
+
+  - name: status
+    display_name: Status
+    type: Choice
+    required: true
+    options:
+      - value: 100000000
+        label: New
+        color: "#2196F3"
+      - value: 100000001
+        label: Assigned
+        color: "#03A9F4"
+      - value: 100000002
+        label: In Diagnosis
+        color: "#00BCD4"
+      - value: 100000003
+        label: On Hold
+        color: "#FF9800"
+      - value: 100000004
+        label: In Progress
+        color: "#8BC34A"
+      - value: 100000005
+        label: Resolved
+        color: "#4CAF50"
+      - value: 100000006
+        label: Closed
+        color: "#9E9E9E"
+    default: 100000000
+
+  - name: preliminary_diagnosis
+    display_name: Preliminary Diagnosis
+    type: MultiLineText
+    max_length: 5000
+    required: false
+    description: Initial assessment of the problem
+
+  - name: root_cause
+    display_name: Root Cause
+    type: MultiLineText
+    max_length: 5000
+    required: false
+    description: Root cause analysis (required for critical tickets)
+
+  - name: solution_applied
+    display_name: Solution Applied
+    type: MultiLineText
+    max_length: 5000
+    required: false
+    description: Description of the solution implemented
+
+  - name: work_checklist
+    display_name: Work Checklist
+    type: MultiLineText
+    max_length: 10000
+    required: false
+    description: JSON-formatted checklist of work items
+
+  - name: before_evidence
+    display_name: Before Evidence
+    type: Image
+    required: false
+    description: Photo evidence before work begins
+
+  - name: after_evidence
+    display_name: After Evidence
+    type: Image
+    required: false
+    description: Photo evidence after work is completed (required for closure)
+
+  - name: estimated_labor_hours
+    display_name: Estimated Labor Hours
+    type: Decimal
+    precision: 2
+    min_value: 0
+    max_value: 999
+    required: false
+
+  - name: actual_labor_hours
+    display_name: Actual Labor Hours
+    type: Decimal
+    precision: 2
+    min_value: 0
+    max_value: 999
+    required: false
+
+  - name: estimated_material_cost
+    display_name: Estimated Material Cost
+    type: Currency
+    precision: 2
+    min_value: 0
+    required: false
+
+  - name: actual_material_cost
+    display_name: Actual Material Cost
+    type: Currency
+    precision: 2
+    min_value: 0
+    required: false
+
+  - name: estimated_external_cost
+    display_name: Estimated External Cost
+    type: Currency
+    precision: 2
+    min_value: 0
+    required: false
+
+  - name: actual_external_cost
+    display_name: Actual External Cost
+    type: Currency
+    precision: 2
+    min_value: 0
+    required: false
+
+  - name: start_date
+    display_name: Start Date
+    type: DateTime
+    behavior: UserLocal
+    required: false
+
+  - name: completion_date
+    display_name: Completion Date
+    type: DateTime
+    behavior: UserLocal
+    required: false
+
+  # Computed columns
+  - name: total_estimated_cost
+    display_name: Total Estimated Cost
+    type: Currency
+    calculated: true
+    formula: "estimated_material_cost + estimated_external_cost + (estimated_labor_hours * 150)"
+    description: "Total estimated cost (material + external + labor @ $150/hr)"
+
+  - name: total_actual_cost
+    display_name: Total Actual Cost
+    type: Currency
+    calculated: true
+    formula: "actual_material_cost + actual_external_cost + (actual_labor_hours * 150)"
+    description: "Total actual cost"
+
+  - name: cost_variance
+    display_name: Cost Variance
+    type: Currency
+    calculated: true
+    formula: "total_actual_cost - total_estimated_cost"
+    description: "Difference between actual and estimated cost"
+
+relationships:
+  - name: workorder_time_logs
+    type: OneToMany
+    related_table: cr_time_log
+    related_column: workorder_id
+    cascade_delete: Restrict
+
+  - name: workorder_material_requests
+    type: OneToMany
+    related_table: cr_material_request
+    related_column: workorder_id
+    cascade_delete: Restrict
+
+views:
+  - name: Active Work Orders
+    description: All work orders not closed
+    filter: status ne 100000006
+    columns: [workorder_id, ticket_id, assigned_technician, status, start_date]
+    sort: start_date desc
+
+  - name: My Work Orders
+    description: Work orders assigned to current user
+    filter: assigned_technician eq currentuser AND status ne 100000006
+    columns: [workorder_id, ticket_id, status, start_date, completion_date]
+    sort: status asc, start_date desc

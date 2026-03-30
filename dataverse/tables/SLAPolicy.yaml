@@ -1,0 +1,126 @@
+# SLA Policy Table Schema
+# Mesa de Ayuda de Mantenimiento - Zamorano University
+
+table:
+  schema_name: cr_sla_policy
+  display_name: SLA Policy
+  plural_name: SLA Policies
+  description: Service Level Agreement policy definitions
+  ownership: Organization
+  primary_column: name
+
+columns:
+  - name: sla_policy_id
+    display_name: SLA Policy ID
+    type: Autonumber
+    format: "SLA-{SEQNUM:4}"
+    description: Auto-generated unique identifier
+
+  - name: name
+    display_name: Policy Name
+    type: SingleLineText
+    max_length: 200
+    required: true
+    description: "Descriptive name (e.g., Critical-Eléctrico, High-Plomería)"
+
+  - name: priority
+    display_name: Priority
+    type: Choice
+    required: true
+    options:
+      - value: 100000000
+        label: Low
+      - value: 100000001
+        label: Medium
+      - value: 100000002
+        label: High
+      - value: 100000003
+        label: Critical
+
+  - name: service_type
+    display_name: Service Type (Category)
+    type: Lookup
+    target_table: cr_category
+    required: false
+    description: Specific category this SLA applies to
+
+  - name: department
+    display_name: Department
+    type: Lookup
+    target_table: cr_department
+    required: false
+    description: Department-specific SLA override (optional)
+
+  - name: first_response_minutes
+    display_name: First Response (minutes)
+    type: WholeNumber
+    min_value: 1
+    max_value: 10080
+    required: true
+    description: Maximum time in minutes for first response
+
+  - name: diagnosis_time_hours
+    display_name: Diagnosis Time (hours)
+    type: WholeNumber
+    min_value: 1
+    max_value: 720
+    required: true
+    description: Maximum time in hours for diagnosis
+
+  - name: resolution_time_hours
+    display_name: Resolution Time (hours)
+    type: WholeNumber
+    min_value: 1
+    max_value: 720
+    required: true
+    description: Maximum time in hours for resolution
+
+  - name: is_active
+    display_name: Is Active
+    type: Boolean
+    default: true
+    description: Whether this SLA policy is active
+
+views:
+  - name: Active SLA Policies
+    description: All active SLA policies
+    filter: is_active eq true
+    columns: [name, priority, service_type, first_response_minutes, diagnosis_time_hours, resolution_time_hours]
+    sort: priority desc
+
+sample_data:
+  # Critical SLAs
+  - name: "Critical - Default"
+    priority: Critical
+    first_response_minutes: 30
+    diagnosis_time_hours: 2
+    resolution_time_hours: 8
+    is_active: true
+  # High SLAs
+  - name: "High - Default"
+    priority: High
+    first_response_minutes: 120
+    diagnosis_time_hours: 4
+    resolution_time_hours: 24
+    is_active: true
+  # Medium SLAs
+  - name: "Medium - Default"
+    priority: Medium
+    first_response_minutes: 240
+    diagnosis_time_hours: 8
+    resolution_time_hours: 48
+    is_active: true
+  # Low SLAs
+  - name: "Low - Default"
+    priority: Low
+    first_response_minutes: 480
+    diagnosis_time_hours: 24
+    resolution_time_hours: 72
+    is_active: true
+  # Emergency Override
+  - name: "Emergency Override"
+    priority: Critical
+    first_response_minutes: 15
+    diagnosis_time_hours: 1
+    resolution_time_hours: 4
+    is_active: true

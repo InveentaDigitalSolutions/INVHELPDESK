@@ -1,0 +1,247 @@
+# Security Roles Configuration
+# Mesa de Ayuda de Mantenimiento - Zamorano University
+# Define role-based access control for all Dataverse tables
+
+security_roles:
+
+  # ─────────────────────────────────────────────
+  # Role 1: Requester (Solicitante)
+  # ─────────────────────────────────────────────
+  - name: HelpDesk Requester
+    description: |
+      End users who can create and track their own tickets.
+      Cannot see other users' tickets or modify system configuration.
+    business_unit: Organization
+    privileges:
+      cr_ticket:
+        create: User          # Can create tickets
+        read: User            # Can read only own tickets
+        write: User           # Can update own tickets (add comments)
+        delete: None          # Cannot delete tickets
+        append: User          # Can add related records to own tickets
+        append_to: User
+      cr_work_order:
+        create: None
+        read: User            # Can see work orders on own tickets
+        write: None
+        delete: None
+      cr_location:
+        read: Organization    # Can read all locations (for dropdowns)
+      cr_category:
+        read: Organization    # Can read all categories
+      cr_subcategory:
+        read: Organization    # Can read all subcategories
+      cr_department:
+        read: Organization    # Can read all departments
+      cr_asset:
+        read: Organization    # Can read all assets (for QR scanning)
+      cr_survey_response:
+        create: User          # Can submit surveys
+        read: User            # Can read own surveys
+        write: User
+        delete: None
+      cr_knowledge_article:
+        read: Organization    # Can read published KB articles
+      cr_material_request:
+        read: User            # Can see requests on own tickets
+      cr_sla_instance:
+        read: User            # Can see SLA status on own tickets
+      cr_time_log:
+        read: None            # Cannot see time logs
+      cr_sla_policy:
+        read: None
+
+  # ─────────────────────────────────────────────
+  # Role 2: Technician (Técnico)
+  # ─────────────────────────────────────────────
+  - name: HelpDesk Technician
+    description: |
+      Maintenance technicians who work on assigned tickets.
+      Can manage work orders, log time, and request materials.
+    business_unit: Organization
+    privileges:
+      cr_ticket:
+        create: None          # Technicians don't create tickets
+        read: User            # Can read assigned tickets
+        write: User           # Can update assigned tickets
+        delete: None
+        append: User
+        append_to: User
+      cr_work_order:
+        create: User          # Can create work orders
+        read: User            # Can read own work orders
+        write: User           # Can update own work orders
+        delete: None
+        append: User
+        append_to: User
+      cr_time_log:
+        create: User          # Can log time
+        read: User            # Can see own time logs
+        write: User           # Can update own time logs
+        delete: User          # Can delete own time logs
+      cr_material_request:
+        create: User          # Can request materials
+        read: User            # Can see own requests
+        write: User           # Can update own requests
+        delete: None
+      cr_location:
+        read: Organization
+      cr_category:
+        read: Organization
+      cr_subcategory:
+        read: Organization
+      cr_department:
+        read: Organization
+      cr_asset:
+        read: Organization
+        write: User           # Can update asset info
+      cr_knowledge_article:
+        create: User          # Can create KB articles
+        read: Organization    # Can read all KB articles
+        write: User           # Can update own articles
+      cr_sla_instance:
+        read: User            # Can see SLA on assigned tickets
+      cr_survey_response:
+        read: None            # Cannot see survey responses
+      cr_sla_policy:
+        read: Organization    # Can see SLA policies
+
+  # ─────────────────────────────────────────────
+  # Role 3: Supervisor
+  # ─────────────────────────────────────────────
+  - name: HelpDesk Supervisor
+    description: |
+      Supervisors who manage the help desk operations.
+      Full read access, can reassign tickets, approve materials, and access reports.
+    business_unit: Organization
+    privileges:
+      cr_ticket:
+        create: BusinessUnit  # Can create tickets for their BU
+        read: BusinessUnit    # Can read all tickets in their BU
+        write: BusinessUnit   # Can update all tickets in their BU
+        delete: None
+        append: BusinessUnit
+        append_to: BusinessUnit
+      cr_work_order:
+        create: BusinessUnit
+        read: BusinessUnit
+        write: BusinessUnit
+        delete: None
+        append: BusinessUnit
+        append_to: BusinessUnit
+      cr_time_log:
+        create: BusinessUnit
+        read: BusinessUnit
+        write: BusinessUnit
+        delete: None
+      cr_material_request:
+        create: BusinessUnit
+        read: BusinessUnit
+        write: BusinessUnit   # Can approve/reject
+        delete: None
+      cr_location:
+        read: Organization
+        write: BusinessUnit
+      cr_category:
+        read: Organization
+        write: BusinessUnit
+      cr_subcategory:
+        read: Organization
+        write: BusinessUnit
+      cr_department:
+        read: Organization
+      cr_asset:
+        read: Organization
+        write: BusinessUnit
+      cr_knowledge_article:
+        create: BusinessUnit
+        read: Organization
+        write: BusinessUnit
+        delete: BusinessUnit
+      cr_sla_instance:
+        read: BusinessUnit
+        write: BusinessUnit
+      cr_survey_response:
+        read: BusinessUnit
+      cr_sla_policy:
+        read: Organization
+        write: BusinessUnit
+
+  # ─────────────────────────────────────────────
+  # Role 4: Administrator
+  # ─────────────────────────────────────────────
+  - name: HelpDesk Administrator
+    description: |
+      Full system administrators with complete access to all entities
+      and configuration capabilities.
+    business_unit: Organization
+    privileges:
+      cr_ticket:
+        create: Organization
+        read: Organization
+        write: Organization
+        delete: Organization
+        append: Organization
+        append_to: Organization
+      cr_work_order:
+        create: Organization
+        read: Organization
+        write: Organization
+        delete: Organization
+        append: Organization
+        append_to: Organization
+      cr_time_log:
+        create: Organization
+        read: Organization
+        write: Organization
+        delete: Organization
+      cr_material_request:
+        create: Organization
+        read: Organization
+        write: Organization
+        delete: Organization
+      cr_location:
+        create: Organization
+        read: Organization
+        write: Organization
+        delete: Organization
+      cr_category:
+        create: Organization
+        read: Organization
+        write: Organization
+        delete: Organization
+      cr_subcategory:
+        create: Organization
+        read: Organization
+        write: Organization
+        delete: Organization
+      cr_department:
+        create: Organization
+        read: Organization
+        write: Organization
+        delete: Organization
+      cr_asset:
+        create: Organization
+        read: Organization
+        write: Organization
+        delete: Organization
+      cr_knowledge_article:
+        create: Organization
+        read: Organization
+        write: Organization
+        delete: Organization
+      cr_sla_instance:
+        create: Organization
+        read: Organization
+        write: Organization
+        delete: Organization
+      cr_survey_response:
+        create: Organization
+        read: Organization
+        write: Organization
+        delete: Organization
+      cr_sla_policy:
+        create: Organization
+        read: Organization
+        write: Organization
+        delete: Organization
